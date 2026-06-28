@@ -1,0 +1,16 @@
+# Dependencies — never commit these
+node_modules/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Vite cache
+.vite/
+vite.config.ts.timestamp*
