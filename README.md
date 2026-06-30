@@ -198,16 +198,24 @@ npm run preview    # preview the production build locally
 
 ## CSV import format
 
-Cards can be bulk-imported from a CSV with two columns:
+Cards can be bulk-imported from a CSV with the following columns:
 
 ```
-Title,Status
-DPK 1001,FAB Target Date Confirmed
-DPK 2001,Pre-FAB Asset Register Preparation
+Title,Status,Pill
+DPK 1001,FAB Target Date Confirmed,14 Jul 27
+DPK 2001,Pre-FAB Asset Register Preparation,High priority
+DPK 3001,Pre-FAB Asset Register Review,
 ```
 
-- `Title` — displayed on the card
-- `Status` — matched (case-insensitively) to a column label; unrecognised rows are skipped
+| Column | Required | Notes |
+|---|---|---|
+| `Title` (or `DPK Number`) | Yes | Displayed as the card title |
+| `Status` | Yes | Matched case-insensitively to a column label; unrecognised rows are skipped |
+| `Pill` (or `Pill Value`) | No | Short tag displayed as a pill below the title (e.g. a date, priority, or reference) |
+
+A sample file is included at [`test-import.csv`](test-import.csv).
+
+> Importing a CSV **replaces all existing cards** on the board. Notes, comments, and settings are not affected.
 
 ---
 
