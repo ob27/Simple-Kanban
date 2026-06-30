@@ -1,165 +1,25 @@
-# Simple AIM Kanban
+# Simple Kanban by Oestler
 
-A full-screen Kanban board for tracking DPK (Deliverable Package) items through a FAB (**Final As Built**) workflow. Designed to run on a large TV or Surface display in the office so the whole team can see progress at a glance.
+A multi-board Kanban platform with real-time sync, invite-based sharing, progress tracking, and per-card notes and comments. Deployed at [oestler.com/simple-kanban](https://oestler.com/simple-kanban).
 
 ---
 
 ## Features
 
-- **Project Lifeline bar** — shows how far through the overall project timeline you are today, with a configurable start and end month/year
-- **Progress bar** — stacked colour segments showing how many DPKs have reached each stage, relative to the total estimated count
-- **6 workflow columns** — FAB Target Date Confirmed → Pre-FAB Prep → Pre-FAB Review → Post-FAB Prep → Post-FAB Review → Completions Data Release
-- **Drag and drop** — reorder cards within a column, or move them between columns, using mouse, touch, or keyboard
-- **Card preview** — press and hold any card to see its full text in a large overlay (useful for long DPK names)
-- **Celebrations** — confetti fires when a card moves right; fireworks launch when a card reaches Completions
-- **CSV import** — paste in a spreadsheet export and the board populates instantly (overwrites existing cards); rows with unrecognised statuses are silently skipped
-- **Manual add / delete** — tap **+** to add a card; hover a card and click **✕** to delete it
-- **Editable total** — click the pencil next to the counter to set how many DPKs exist in total, keeping the progress bar honest
-- **Persists locally** — all state is saved to `localStorage`; no server or cloud account required
-
----
-
-## What is FAB?
-
-**FAB** stands for **Final As Built**. The workflow tracks DPK items as they move through the documentation and review process required to produce Final As Built asset registers, culminating in the release of completions data.
-
----
-
-## Running the app
-
-A pre-built production bundle is committed to this repo inside the `dist/` folder. You do not need Node.js installed to run it — you only need a way to serve static files over HTTP.
-
-### Option A — Python (no install required)
-
-Python ships with macOS and most Linux distributions.
-
-```bash
-git clone https://github.com/your-org/Simple-AIM-Kanban.git
-cd "Simple AIM Kanban"
-
-# Python 3
-python3 -m http.server 8080 --directory dist
-```
-
-Then open **http://localhost:8080** in a browser.
-
-### Option B — Node / npx (no npm install required)
-
-```bash
-git clone https://github.com/your-org/Simple-AIM-Kanban.git
-cd "Simple AIM Kanban"
-
-npx serve dist
-```
-
-Then open the URL shown in the terminal (usually **http://localhost:3000**).
-
-> **TV / kiosk display:** run the server on a machine attached to the screen, then open the URL in a full-screen browser window (F11 on Windows, or use kiosk mode in Chrome: `chrome --kiosk http://localhost:8080`).
-
----
-
-## Development setup
-
-Only needed if you want to modify the source code.
-
-**Prerequisites:** [Node.js](https://nodejs.org/) v18 or later (npm is bundled with Node).
-
-```bash
-# 1. Clone and enter the repo
-git clone https://github.com/your-org/Simple-AIM-Kanban.git
-cd "Simple AIM Kanban"
-
-# 2. Install dependencies
-npm install
-
-# 3. Start the hot-reload dev server
-npm run dev
-```
-
-Open **http://localhost:5173**. The page updates automatically as you save files.
-
-```bash
-# Type-check and produce a new production build
-npm run build
-
-# Preview the production build locally
-npm run preview
-```
-
-The `dist/` folder is committed to the repo — after making changes, run `npm run build` and commit the updated `dist/` along with your source changes so other users always have a current pre-built version.
-
----
-
-## CSV import format
-
-Prepare a `.csv` file with exactly two columns:
-
-```
-DPK Number,Status
-DPK 1001,FAB Target Date Confirmed
-DPK 2001,Pre-FAB Asset Register Preparation
-DPK 3001,Pre-FAB Asset Register Review
-DPK 4001,Post-FAB Asset Register Preparation
-DPK 5001,Post-FAB Asset Register Review
-DPK 6001,Completions Data Release
-```
-
-| Column | Required | Notes |
-|---|---|---|
-| `DPK Number` | Yes | Displayed on the card. Converted to uppercase on import. |
-| `Status` | Yes | Matched to a column — see mappings below. Case-insensitive, partial matches accepted. |
-
-**Status → Column mappings**
-
-| Status value (or substring) | Column |
-|---|---|
-| `FAB Target`, `Target Date Confirmed` | FAB Target Date Confirmed |
-| `Pre-FAB Asset Register Prep`, `Pre FAB Prep` | Pre-FAB Asset Register Preparation |
-| `Pre-FAB Asset Register Review`, `Pre FAB Review` | Pre-FAB Asset Register Review |
-| `Post-FAB Asset Register Prep`, `Post FAB Prep` | Post-FAB Asset Register Preparation |
-| `Post-FAB Asset Register Review`, `Post FAB Review` | Post-FAB Asset Register Review |
-| `Completions`, `Data Release` | Completions Data Release |
-
-Rows with a blank DPK Number, blank Status, or an unrecognised Status are skipped silently. The success notification reports how many rows were skipped. A sample file is included at [`test-import.csv`](test-import.csv).
-
-> **Note:** importing a CSV overwrites **all** existing cards on the board. The total estimated count and project dates are not affected.
-
----
-
-## Usage
-
-### Importing from CSV
-
-1. Tap the **+** button (bottom-right corner)
-2. In the modal, scroll past the manual add form and click **Choose CSV file…**
-3. Select your `.csv` file
-4. A success notification confirms how many cards were imported and how many rows were skipped
-
-### Adding a card manually
-
-1. Tap the **+** button (bottom-right corner)
-2. Enter the DPK number and select a column
-3. Click **Add Card**
-
-### Deleting a card
-
-Hover over the card — a **✕** button appears in the top-right corner of the card. Click it to delete.
-
-### Moving a card
-
-Click and drag the card to another column or a new position within the same column. On touch screens, press and hold briefly until the card lifts, then drag.
-
-### Viewing the full text of a card
-
-Press and hold any card for about 0.4 seconds. A panel appears showing the full DPK number. Release to dismiss.
-
-### Updating the total DPK estimate
-
-Click the **pencil icon** next to the counter (e.g. `24 of 300 ✏️`), enter the new total, and press **OK** or **Enter**.
-
-### Configuring the Project Lifeline dates
-
-Click the **pencil icon** next to the "Project Lifeline" label. Set the start month/year and end month/year, then click **Apply**.
+- **Multiple boards** — each user can own or be invited to any number of kanbans
+- **Real-time sync** — all state in Firestore; changes appear instantly across devices
+- **Project Lifeline** — timeline bar showing how far through the project you are today
+- **Progress bar** — stacked colour segments per column, driven by actual card counts
+- **Groomed % / Complete %** — assign Backlog, Groomed, and Done roles to columns in Settings
+- **Drag and drop** — mouse, touch, and keyboard, with confetti when cards move forward
+- **Card notes + comments** — double-tap or double-click any card to open a notes drawer and threaded comments with dicebear avatars
+- **Card long-press preview** — hold a card to see its full title in a centred overlay
+- **Invite sharing** — share a link; recipients sign in or create an account and auto-join
+- **Access management** — owners can add co-owners, remove members, and manage roles from the gallery
+- **Per-kanban settings** — column titles, column colours, card font size, timeline dates, estimated total, progress bar + lifeline toggles
+- **Password recovery** — Firebase sends a reset email with no additional configuration
+- **Responsive layout** — tablet and mobile breakpoints; board scrolls horizontally on small screens
+- **CSV import** — bulk-import cards from a spreadsheet export
 
 ---
 
@@ -171,12 +31,194 @@ Click the **pencil icon** next to the "Project Lifeline" label. Set the start mo
 | Build tool | Vite 5 |
 | UI components | Ant Design 5 |
 | Drag and drop | @dnd-kit/core + @dnd-kit/sortable |
-| CSV parsing | PapaParse |
+| Backend / auth | Firebase (Auth + Firestore + Hosting) |
+| Avatars | DiceBear (notionists-neutral, seeded from email) |
 | Celebrations | canvas-confetti |
-| Storage | Browser `localStorage` |
 
 ---
 
-## Data persistence
+## Security model
 
-All board state (cards, total estimated count, and project dates) is stored in `localStorage` under the key `aim_kanban_state`. It survives page refreshes and browser restarts but is scoped to the browser/device. If you need to share state across machines, export your CSV from the source spreadsheet and re-import on each device.
+The Firebase client config (`apiKey`, `appId`, etc.) in `src/firebase.ts` is **intentionally public** — these are client-side identifiers required by the Firebase SDK and end up in the served JavaScript bundle regardless. Security is enforced by:
+
+1. **Firestore security rules** (`/users/tom/oestler/firestore.rules`) — every read/write is gated by auth uid and ownership checks
+2. **Firebase Authentication** — no anonymous access; email+password accounts only
+3. **Firebase App Check** (reCAPTCHA v3, production only) — prevents automated abuse
+
+**What is NOT safe to commit:** Firebase Admin SDK service account JSON files, server-side API keys, and any `.env` files containing secrets. None of those exist in this project. The `.gitignore` already excludes `.env*` files.
+
+---
+
+## Deploying your own instance
+
+### 1. Prerequisites
+
+- [Node.js](https://nodejs.org/) v18+
+- [Firebase CLI](https://firebase.google.com/docs/cli): `npm install -g firebase-tools`
+- A Firebase project — create one at [console.firebase.google.com](https://console.firebase.google.com)
+
+### 2. Firebase project setup
+
+In the Firebase console for your project:
+
+**Authentication**
+- Enable **Email/Password** sign-in (Authentication → Sign-in method)
+
+**Firestore**
+- Create a Firestore database in production mode (Database → Create database)
+- Deploy the security rules (see step 5)
+
+**Hosting**
+- Register a web app (Project settings → Add app → Web)
+- Note the config values — you'll paste them into `src/firebase.ts`
+
+**App Check** (optional but recommended for production)
+- Register a reCAPTCHA v3 site key at [google.com/recaptcha](https://www.google.com/recaptcha)
+- Enable App Check in the Firebase console (App Check → Apps → Register)
+
+### 3. Update the Firebase config
+
+Edit `src/firebase.ts` and replace the config object with your own project's values:
+
+```ts
+const firebaseConfig = {
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_PROJECT.firebaseapp.com',
+  projectId: 'YOUR_PROJECT',
+  storageBucket: 'YOUR_PROJECT.firebasestorage.app',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId: 'YOUR_APP_ID',
+  measurementId: 'YOUR_MEASUREMENT_ID',   // optional
+};
+```
+
+If using App Check, also replace the reCAPTCHA site key:
+
+```ts
+initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider('YOUR_RECAPTCHA_SITE_KEY'),
+  ...
+});
+```
+
+If you're not using App Check, remove the `initializeAppCheck` block.
+
+### 4. Update Vite config
+
+Edit `vite.config.ts` to set your own `base` path and `outDir`:
+
+```ts
+export default defineConfig({
+  plugins: [react()],
+  base: '/simple-kanban/',        // URL path where the app will be served
+  build: {
+    outDir: './dist',             // local output directory
+    emptyOutDir: true,
+  },
+})
+```
+
+### 5. Deploy Firestore security rules
+
+The rules file lives at `/users/tom/oestler/firestore.rules` in this repo's parent project. Copy the relevant `kanbans` and `kanbanInvites` match blocks into your own `firestore.rules` file and deploy:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+The key rules to include:
+
+```
+match /kanbans/{kanbanId} {
+  // Owners and co-owners have full access
+  // Members can update cards only
+  // Invite join allows adding self to memberIds + memberEmails
+}
+
+match /kanbanInvites/{token} {
+  allow read: if true;   // public — tokens are random UUIDs; content is not sensitive
+  allow create, update: if request.auth != null
+                        && request.resource.data.ownerId == request.auth.uid;
+  allow delete: if request.auth != null
+                && resource.data.ownerId == request.auth.uid;
+}
+```
+
+### 6. Update Firebase Hosting rewrites
+
+If you're hosting at a sub-path (e.g. `/simple-kanban`), add rewrite rules to your `firebase.json`:
+
+```json
+{
+  "hosting": {
+    "rewrites": [
+      { "source": "/simple-kanban",    "destination": "/simple-kanban/index.html" },
+      { "source": "/simple-kanban/**", "destination": "/simple-kanban/index.html" }
+    ]
+  }
+}
+```
+
+If hosting at the root path, use `"source": "**"` instead.
+
+### 7. Build and deploy
+
+```bash
+# Install dependencies
+npm install
+
+# Build the app
+npm run build
+
+# Deploy to Firebase Hosting
+firebase deploy --only hosting
+```
+
+---
+
+## Development
+
+```bash
+npm install
+npm run dev        # dev server at http://localhost:5173
+npm run build      # production build
+npm run preview    # preview the production build locally
+```
+
+---
+
+## Invite flow
+
+1. Open a kanban → Settings → copy the invite link
+2. Share the link with the person you want to invite
+3. They open the link, sign in (or create an account), and are automatically added as a member
+4. Invite tokens are UUIDs; regenerate from Settings to invalidate any existing links
+
+---
+
+## CSV import format
+
+Cards can be bulk-imported from a CSV with two columns:
+
+```
+Title,Status
+DPK 1001,FAB Target Date Confirmed
+DPK 2001,Pre-FAB Asset Register Preparation
+```
+
+- `Title` — displayed on the card
+- `Status` — matched (case-insensitively) to a column label; unrecognised rows are skipped
+
+---
+
+## Column roles
+
+In Settings → Column roles, assign three special roles:
+
+| Role | Purpose |
+|---|---|
+| **Backlog** | Cards here count as "not yet groomed"; optionally used as the estimated total |
+| **Groomed** | Cards at or past this column count toward groomed % |
+| **Done** | Cards in this column count toward complete % |
+
+These drive the `groomed %` and `complete %` figures shown in the progress bar legend.

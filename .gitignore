@@ -1,6 +1,9 @@
 # Dependencies — never commit these
 node_modules/
 
+# Build output — regenerate with npm run build
+dist/
+
 # Editor / OS noise
 .DS_Store
 Thumbs.db

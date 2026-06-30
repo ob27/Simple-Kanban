@@ -1,28 +1,49 @@
-export type ColumnId =
-  | 'fab_target'
-  | 'pre_fab_prep'
-  | 'pre_fab_review'
-  | 'post_fab_prep'
-  | 'post_fab_review'
-  | 'completions';
-
-export interface DPKCard {
+export interface ColumnConfig {
   id: string;
-  dpkNumber: string;
-  columnId: ColumnId;
+  label: string;
+  color: string;
 }
 
-export interface KanbanState {
-  cards: DPKCard[];
+export interface CardComment {
+  id: string;
+  uid: string;
+  email: string;
+  text: string;
+  createdAt: number;
+}
+
+export interface KanbanCard {
+  id: string;
+  title: string;
+  columnId: string;
+  pillValue: string;
+  order: number;
+  notes?: string;
+  comments?: CardComment[];
+}
+
+export interface Kanban {
+  id: string;
+  name: string;
+  ownerId: string;
+  memberIds: string[];
+  inviteToken: string;
+  columns: ColumnConfig[];
   totalEstimated: number;
+  totalFromBacklog?: boolean;
+  backlogColumnId?: string;
+  groomedColumnId?: string;
+  doneColumnId?: string;
+  showProgressBar?: boolean;
+  showLifeline?: boolean;
+  cardFontSize?: number;
+  ownerEmail?: string;
+  coOwnerIds?: string[];
+  memberEmails?: Record<string, string>;
   projectStartYear: number;
   projectStartMonth: number;
   projectEndYear: number;
   projectEndMonth: number;
-}
-
-export interface ColumnConfig {
-  id: ColumnId;
-  label: string;
-  color: string;
+  cards: KanbanCard[];
+  createdAt: number;
 }
