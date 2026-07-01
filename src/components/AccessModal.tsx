@@ -18,7 +18,7 @@ interface Props {
 interface Entry {
   uid: string;
   email: string;
-  role: 'creator' | 'co-owner' | 'member';
+  role: 'creator' | 'co-owner' | 'member' | 'viewer';
 }
 
 function resolveEmail(uid: string, kanban: Kanban, currentUid: string, currentEmail: string): string {
@@ -31,6 +31,7 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
   const [busy, setBusy] = useState<string | null>(null);
 
   const coOwnerIds = kanban.coOwnerIds ?? [];
+  const viewerIds = kanban.viewerIds ?? [];
 
   // Silently backfill missing owner email and current user's member email
   useEffect(() => {
@@ -64,11 +65,18 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
         email: resolveEmail(uid, kanban, currentUid, currentEmail),
         role: 'member' as const,
       })),
+    ...viewerIds
+      .filter(uid => uid !== kanban.ownerId && !coOwnerIds.includes(uid) && !kanban.memberIds.includes(uid))
+      .map(uid => ({
+        uid,
+        email: resolveEmail(uid, kanban, currentUid, currentEmail),
+        role: 'viewer' as const,
+      })),
   ];
 
   const isCurrentOwner = kanban.ownerId === currentUid || coOwnerIds.includes(currentUid);
 
-  async function handleRoleChange(uid: string, role: 'co-owner' | 'member') {
+  async function handleRoleChange(uid: string, role: 'co-owner' | 'member' | 'viewer') {
     setBusy(uid);
     try {
       const updated = await setMemberRole(kanban, uid, role);
@@ -94,7 +102,19 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
     }
   }
 
-  const totalMembers = kanban.memberIds.length + coOwnerIds.length;
+  const ROLE_COLORS: Record<string, string> = {
+    creator: 'gold',
+    'co-owner': 'purple',
+    member: 'blue',
+    viewer: 'default',
+  };
+
+  const ROLE_LABELS: Record<string, string> = {
+    creator: 'Creator',
+    'co-owner': 'Co-owner',
+    member: 'Member',
+    viewer: 'Viewer',
+  };
 
   return (
     <Modal
@@ -105,7 +125,7 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
       width={480}
     >
       <div style={{ marginBottom: 8, fontSize: 12, color: '#aaa' }}>
-        {1 + totalMembers} {1 + totalMembers === 1 ? 'person has' : 'people have'} access
+        {entries.length} {entries.length === 1 ? 'person has' : 'people have'} access
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -126,7 +146,6 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
                 borderBottom: '1px solid #f5f5f5',
               }}
             >
-              {/* Avatar — seed with email if we have it, else uid */}
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <UserAvatar
                   email={entry.email || entry.uid}
@@ -146,7 +165,6 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
                 )}
               </div>
 
-              {/* Email + role */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: entry.email ? '#1a1a2e' : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {entry.email
@@ -155,11 +173,10 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
                   }
                 </div>
                 <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>
-                  {isCreator ? 'Creator' : entry.role === 'co-owner' ? 'Co-owner' : 'Member'}
+                  {ROLE_LABELS[entry.role]}
                 </div>
               </div>
 
-              {/* Role selector + remove */}
               {isCurrentOwner && !isCreator && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                   <Select
@@ -167,10 +184,11 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
                     value={entry.role}
                     disabled={isLoading}
                     style={{ width: 110 }}
-                    onChange={v => handleRoleChange(entry.uid, v as 'co-owner' | 'member')}
+                    onChange={v => handleRoleChange(entry.uid, v as 'co-owner' | 'member' | 'viewer')}
                     options={[
                       { value: 'co-owner', label: 'Co-owner' },
                       { value: 'member', label: 'Member' },
+                      { value: 'viewer', label: 'Viewer' },
                     ]}
                   />
                   <Popconfirm
@@ -187,10 +205,9 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
                 </div>
               )}
 
-              {/* Non-editable badge for members viewing */}
               {!isCurrentOwner && (
-                <Tag color={isCreator ? 'gold' : entry.role === 'co-owner' ? 'purple' : 'default'}>
-                  {isCreator ? 'Creator' : entry.role === 'co-owner' ? 'Co-owner' : 'Member'}
+                <Tag color={ROLE_COLORS[entry.role]}>
+                  {ROLE_LABELS[entry.role]}
                 </Tag>
               )}
             </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Drawer, Button, Input, Form, InputNumber, Popconfirm, message, Select, Tooltip, Switch } from 'antd';
+const { TextArea } = Input;
 import { CopyOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { Kanban } from '../types';
 import { regenerateInvite } from '../store';
@@ -27,11 +28,13 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete }: Pr
   const [form] = Form.useForm();
   const [regenerating, setRegenerating] = useState(false);
   const [columnColors, setColumnColors] = useState<string[]>([]);
+  const [columnDescriptions, setColumnDescriptions] = useState<string[]>([]);
   const { isMobile } = useBreakpoint();
 
   useEffect(() => {
     if (open) {
       setColumnColors(kanban.columns.map(c => c.color));
+      setColumnDescriptions(kanban.columns.map(c => c.description ?? ''));
       form.setFieldsValue({
         name: kanban.name,
         totalEstimated: kanban.totalEstimated,
@@ -56,6 +59,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete }: Pr
       ...col,
       label: (vals[`col_${i}`] as string) || col.label,
       color: columnColors[i] ?? col.color,
+      description: columnDescriptions[i] ?? col.description ?? '',
     }));
     onChange({
       ...kanban,
@@ -116,33 +120,46 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete }: Pr
         {/* Columns */}
         <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555' }}>Columns</div>
         {kanban.columns.map((col, i) => (
-          <div key={col.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            {/* Color swatch + hidden native color picker */}
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <div
-                style={{
-                  width: 28, height: 28, borderRadius: 6, cursor: 'pointer',
-                  background: columnColors[i] ?? col.color,
-                  border: '2px solid rgba(0,0,0,0.12)',
-                  boxSizing: 'border-box',
-                }}
-                onClick={() => document.getElementById(`col-color-${i}`)?.click()}
-              />
-              <input
-                id={`col-color-${i}`}
-                type="color"
-                value={columnColors[i] ?? col.color}
-                onChange={e => {
-                  const next = [...columnColors];
-                  next[i] = e.target.value;
-                  setColumnColors(next);
-                }}
-                style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-              />
+          <div key={col.id} style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Color swatch + hidden native color picker */}
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <div
+                  style={{
+                    width: 28, height: 28, borderRadius: 6, cursor: 'pointer',
+                    background: columnColors[i] ?? col.color,
+                    border: '2px solid rgba(0,0,0,0.12)',
+                    boxSizing: 'border-box',
+                  }}
+                  onClick={() => document.getElementById(`col-color-${i}`)?.click()}
+                />
+                <input
+                  id={`col-color-${i}`}
+                  type="color"
+                  value={columnColors[i] ?? col.color}
+                  onChange={e => {
+                    const next = [...columnColors];
+                    next[i] = e.target.value;
+                    setColumnColors(next);
+                  }}
+                  style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                />
+              </div>
+              <Form.Item name={`col_${i}`} style={{ marginBottom: 0, flex: 1 }}>
+                <Input size="middle" />
+              </Form.Item>
             </div>
-            <Form.Item name={`col_${i}`} style={{ marginBottom: 0, flex: 1 }}>
-              <Input size="middle" />
-            </Form.Item>
+            <TextArea
+              value={columnDescriptions[i] ?? ''}
+              onChange={e => {
+                const next = [...columnDescriptions];
+                next[i] = e.target.value;
+                setColumnDescriptions(next);
+              }}
+              placeholder="Column description (optional) — shown as an ℹ️ button in the column header"
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              style={{ marginTop: 6, marginLeft: 36, fontSize: 12, color: '#666' }}
+            />
           </div>
         ))}
 

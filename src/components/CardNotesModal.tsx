@@ -16,6 +16,7 @@ interface Props {
   columnColor: string;
   currentUser: { uid: string; email: string };
   canDeleteAnyComment: boolean;
+  readOnly?: boolean;
   onClose: () => void;
   onSaveCard: (cardId: string, updates: CardUpdates) => void;
   onAddComment: (cardId: string, text: string) => void;
@@ -34,7 +35,7 @@ function relativeTime(ts: number): string {
 }
 
 export function CardNotesModal({
-  card, columnColor, currentUser, canDeleteAnyComment,
+  card, columnColor, currentUser, canDeleteAnyComment, readOnly,
   onClose, onSaveCard, onAddComment, onEditComment, onDeleteComment,
 }: Props) {
   const { isMobile } = useBreakpoint();
@@ -102,11 +103,12 @@ export function CardNotesModal({
       <div style={{ borderLeft: `5px solid ${columnColor}`, padding: '18px 24px 16px', background: '#fff' }}>
         <Input
           value={titleValue}
-          onChange={e => setTitleValue(e.target.value)}
+          onChange={e => !readOnly && setTitleValue(e.target.value)}
           onBlur={handleTitleBlur}
           onPressEnter={e => (e.currentTarget as HTMLInputElement).blur()}
           variant="borderless"
-          style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', padding: '0 0 2px', width: '100%', lineHeight: 1.3 }}
+          readOnly={readOnly}
+          style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', padding: '0 0 2px', width: '100%', lineHeight: 1.3, cursor: readOnly ? 'default' : undefined }}
         />
         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 11, color: '#bbb', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
@@ -114,15 +116,16 @@ export function CardNotesModal({
           </span>
           <Input
             value={pillValue}
-            onChange={e => setPillValue(e.target.value)}
+            onChange={e => !readOnly && setPillValue(e.target.value)}
             onBlur={handlePillBlur}
             onPressEnter={e => (e.currentTarget as HTMLInputElement).blur()}
-            placeholder="e.g. 14 Jul, High priority"
+            placeholder={readOnly ? '' : 'e.g. 14 Jul, High priority'}
             variant="borderless"
+            readOnly={readOnly}
             style={{
               fontSize: 12, color: '#888', padding: '0 4px',
               background: pillValue ? `${columnColor}18` : 'transparent',
-              borderRadius: 4, flex: 1,
+              borderRadius: 4, flex: 1, cursor: readOnly ? 'default' : undefined,
             }}
           />
         </div>
@@ -136,11 +139,12 @@ export function CardNotesModal({
           </div>
           <Input.TextArea
             value={notesValue}
-            onChange={e => setNotesValue(e.target.value)}
+            onChange={e => !readOnly && setNotesValue(e.target.value)}
             onBlur={handleNotesBlur}
-            placeholder="Add notes about this card…"
+            placeholder={readOnly ? (notesValue ? '' : 'No notes added.') : 'Add notes about this card…'}
+            readOnly={readOnly}
             autoSize={{ minRows: 4, maxRows: 12 }}
-            style={{ fontSize: 14, lineHeight: 1.6, resize: 'none' }}
+            style={{ fontSize: 14, lineHeight: 1.6, resize: 'none', cursor: readOnly ? 'default' : undefined }}
           />
         </div>
 
@@ -156,8 +160,8 @@ export function CardNotesModal({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
             {comments.map(c => {
-              const canEdit = c.uid === currentUser.uid;
-              const canDelete = c.uid === currentUser.uid || canDeleteAnyComment;
+              const canEdit = !readOnly && c.uid === currentUser.uid;
+              const canDelete = !readOnly && (c.uid === currentUser.uid || canDeleteAnyComment);
               const isEditing = editingCommentId === c.id;
               const isHovered = hoveredCommentId === c.id;
 
@@ -231,25 +235,27 @@ export function CardNotesModal({
             })}
           </div>
 
-          {/* Add comment */}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <UserAvatar email={currentUser.email} size={28} />
-            <div style={{ flex: 1, display: 'flex', gap: 8 }}>
-              <Input
-                value={commentText}
-                onChange={e => setCommentText(e.target.value)}
-                onPressEnter={handleSendComment}
-                placeholder="Add a comment…"
-                style={{ flex: 1, fontSize: 13 }}
-              />
-              <Button
-                type="primary"
-                icon={<SendOutlined />}
-                onClick={handleSendComment}
-                disabled={!commentText.trim()}
-              />
+          {/* Add comment — hidden for viewers */}
+          {!readOnly && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <UserAvatar email={currentUser.email} size={28} />
+              <div style={{ flex: 1, display: 'flex', gap: 8 }}>
+                <Input
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  onPressEnter={handleSendComment}
+                  placeholder="Add a comment…"
+                  style={{ flex: 1, fontSize: 13 }}
+                />
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  onClick={handleSendComment}
+                  disabled={!commentText.trim()}
+                />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </Modal>

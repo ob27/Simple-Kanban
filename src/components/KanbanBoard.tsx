@@ -22,6 +22,7 @@ interface Props {
   onDeleteCard: (cardId: string) => void;
   cardFontSize?: number;
   isOwner?: boolean;
+  isViewer?: boolean;
 }
 
 function burstConfetti(colors: string[]) {
@@ -42,15 +43,15 @@ function launchFireworks() {
   explode(0.3, 0.3, 1500, 70); explode(0.7, 0.3, 1560, 70);
 }
 
-export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardFontSize, isOwner }: Props) {
+export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardFontSize, isOwner, isViewer }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
   const { isMobile, isTablet } = useBreakpoint();
   const { user } = useAuth();
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: isViewer ? 999999 : 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: isViewer ? 999999 : 250, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -59,11 +60,13 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
   const lastColumnId = columns[columns.length - 1]?.id;
 
   function handleDragStart(event: DragStartEvent) {
+    if (isViewer) return;
     setActiveCard(cards.find(c => c.id === event.active.id) ?? null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveCard(null);
+    if (isViewer) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -167,6 +170,7 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
               onOpenNotes={setNotesCardId}
               minWidth={colMinWidth}
               cardFontSize={cardFontSize}
+              isViewer={isViewer}
             />
           ))}
         </div>
@@ -190,6 +194,7 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
           currentUser={{ uid: user.uid, email: user.email }}
           onClose={() => setNotesCardId(null)}
           canDeleteAnyComment={!!isOwner}
+          readOnly={!!isViewer}
           onSaveCard={handleSaveCard}
           onAddComment={handleAddComment}
           onEditComment={handleEditComment}

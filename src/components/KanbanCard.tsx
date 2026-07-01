@@ -13,12 +13,13 @@ interface Props {
   onOpenNotes?: () => void;
   cardFontSize?: number;
   isOverlay?: boolean;
+  isViewer?: boolean;
 }
 
 const LONG_PRESS_DELAY = 380;
 const DOUBLE_TAP_MS = 300;
 
-export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontSize, isOverlay = false }: Props) {
+export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontSize, isOverlay = false, isViewer = false }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
 
   const [hovered, setHovered] = useState(false);
@@ -92,7 +93,7 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
-    cursor: isOverlay ? 'grabbing' : 'grab',
+    cursor: isOverlay ? 'grabbing' : isViewer ? 'default' : 'grab',
     userSelect: 'none',
     touchAction: 'none',
     boxShadow: isOverlay
@@ -142,7 +143,7 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
           </span>
         )}
 
-        {!isOverlay && (
+        {!isOverlay && !isViewer && (
           <div
             onPointerDown={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
             onClick={e => { e.stopPropagation(); onDelete(card.id); }}

@@ -63,12 +63,12 @@ export function ProgressBar({ cards, columns, totalEstimated, doneColumnId, groo
         })}
         {remainingCount > 0 && (
           <div
-            title={`Not yet groomed: ${remainingCount} cards`}
+            title={`Not yet planned: ${remainingCount} cards`}
             style={{ flex: 1, background: REMAINING_COLOR, transition: 'flex 0.45s cubic-bezier(0.4, 0, 0.2, 1)', display: 'flex', alignItems: 'center', paddingLeft: 12, overflow: 'hidden' }}
           >
             {(remainingCount / total) * 100 > 8 && (
               <span style={{ color: '#6b5ea8', fontSize: 'clamp(11px, 0.95vw, 14px)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                {remainingCount} not yet groomed
+                {remainingCount} not yet planned
               </span>
             )}
           </div>
@@ -81,7 +81,7 @@ export function ProgressBar({ cards, columns, totalEstimated, doneColumnId, groo
           if (!count) return null;
           const shortLabel = col.label.length > 16 ? col.label.slice(0, 15) + '…' : col.label;
           return (
-            <div key={col.id} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+            <div key={col.id} title={col.label} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'default' }}>
               <span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: col.color, flexShrink: 0 }} />
               <span style={{ fontSize: 'clamp(11px, 0.85vw, 13px)', color: '#555', whiteSpace: 'nowrap' }}>
                 {shortLabel}:&nbsp;<strong style={{ color: '#222' }}>{count}</strong>
@@ -93,7 +93,7 @@ export function ProgressBar({ cards, columns, totalEstimated, doneColumnId, groo
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
             <span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: REMAINING_COLOR, flexShrink: 0 }} />
             <span style={{ fontSize: 'clamp(11px, 0.85vw, 13px)', color: '#888', whiteSpace: 'nowrap' }}>
-              Not groomed:&nbsp;<strong style={{ color: '#555' }}>{remainingCount}</strong>
+              Not planned:&nbsp;<strong style={{ color: '#555' }}>{remainingCount}</strong>
             </span>
           </div>
         )}

@@ -24,6 +24,7 @@ export function BoardPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const isOwner = kanban && user ? isKanbanOwner(kanban, user.uid) : false;
+  const isViewer = kanban && user ? (kanban.viewerIds ?? []).includes(user.uid) : false;
   const { isMobile } = useBreakpoint();
 
   const totalCardCount = kanban ? kanban.cards.length : 0;
@@ -172,14 +173,21 @@ export function BoardPage() {
               if (open) setEditValue(kanban.totalEstimated);
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, cursor: 'pointer' }}>
-              <span style={{ fontSize: 'clamp(16px, 2vw, 28px)', fontWeight: 800, color: '#1a1a2e', lineHeight: 1 }}>
-                {kanban.name}
-              </span>
-              <span style={{ fontSize: 'clamp(12px, 1.1vw, 16px)', fontWeight: 400, color: '#666', lineHeight: 1 }}>
-                {kanban.cards.length} of {effectiveTotal} cards
-              </span>
-              <EditOutlined style={{ fontSize: 13, color: '#aaa', marginLeft: 2 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 'clamp(16px, 2vw, 28px)', fontWeight: 800, color: '#1a1a2e', lineHeight: 1 }}>
+                  {kanban.name}
+                </span>
+                <span style={{ fontSize: 'clamp(12px, 1.1vw, 16px)', fontWeight: 400, color: '#666', lineHeight: 1 }}>
+                  {kanban.cards.length} of {effectiveTotal} cards
+                </span>
+                {!isViewer && <EditOutlined style={{ fontSize: 13, color: '#aaa', marginLeft: 2 }} />}
+              </div>
+              {!isOwner && kanban.ownerEmail && (
+                <span style={{ fontSize: 11, color: '#aaa', fontWeight: 400 }}>
+                  Shared by {kanban.ownerEmail}
+                </span>
+              )}
             </div>
           </Popover>
         </div>
@@ -204,13 +212,16 @@ export function BoardPage() {
         onDeleteCard={deleteCard}
         cardFontSize={kanban.cardFontSize}
         isOwner={isOwner}
+        isViewer={isViewer}
       />
 
-      <AddCardModal
-        columns={kanban.columns}
-        onAdd={addCard}
-        onImport={cards => setKanban({ ...kanban, cards })}
-      />
+      {!isViewer && (
+        <AddCardModal
+          columns={kanban.columns}
+          onAdd={addCard}
+          onImport={cards => setKanban({ ...kanban, cards })}
+        />
+      )}
 
       {isOwner && (
         <KanbanSettings

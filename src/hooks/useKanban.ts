@@ -29,7 +29,8 @@ export function useKanban(id: string) {
         const data = { id: snap.id, ...snap.data() } as Kanban;
         const hasAccess = data.ownerId === user.uid
           || data.memberIds.includes(user.uid)
-          || (data.coOwnerIds ?? []).includes(user.uid);
+          || (data.coOwnerIds ?? []).includes(user.uid)
+          || (data.viewerIds ?? []).includes(user.uid);
         if (!hasAccess) {
           setNotFound(true);
         } else {

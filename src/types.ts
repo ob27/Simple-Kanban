@@ -2,6 +2,7 @@ export interface ColumnConfig {
   id: string;
   label: string;
   color: string;
+  description?: string;
 }
 
 export interface CardComment {
@@ -39,6 +40,7 @@ export interface Kanban {
   cardFontSize?: number;
   ownerEmail?: string;
   coOwnerIds?: string[];
+  viewerIds?: string[];
   memberEmails?: Record<string, string>;
   projectStartYear: number;
   projectStartMonth: number;

@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { Modal } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { ColumnConfig, KanbanCard } from '../types';
@@ -10,10 +13,12 @@ interface Props {
   onOpenNotes?: (cardId: string) => void;
   minWidth?: number;
   cardFontSize?: number;
+  isViewer?: boolean;
 }
 
-export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize }: Props) {
+export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, isViewer }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: config.id });
+  const [descOpen, setDescOpen] = useState(false);
 
   return (
     <div style={{
@@ -28,10 +33,28 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
       <div style={{
         background: config.color, color: '#FFFFFF', padding: '10px 14px',
         height: 72, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        position: 'relative',
       }}>
         <span style={{ fontWeight: 700, fontSize: 'clamp(11px, 1.05vw, 17px)', textAlign: 'center', lineHeight: 1.25 }}>
           {config.label}
         </span>
+        {config.description && (
+          <button
+            onClick={() => setDescOpen(true)}
+            title="Column description"
+            style={{
+              position: 'absolute', top: 7, right: 8,
+              background: 'rgba(255,255,255,0.25)', border: 'none', borderRadius: '50%',
+              width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, color: '#fff', flexShrink: 0,
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.45)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.25)')}
+          >
+            <InfoCircleOutlined style={{ fontSize: 12, pointerEvents: 'none' }} />
+          </button>
+        )}
       </div>
 
       <div style={{ height: 2, background: config.color, opacity: 0.25, flexShrink: 0 }} />
@@ -51,6 +74,7 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
               onDelete={onDeleteCard}
               onOpenNotes={onOpenNotes ? () => onOpenNotes(card.id) : undefined}
               cardFontSize={cardFontSize}
+              isViewer={isViewer}
             />
           ))}
         </SortableContext>
@@ -58,11 +82,25 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
         {cards.length === 0 && (
           <div style={{ flex: 1, minHeight: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: '#C0C4CC', fontSize: 'clamp(11px, 0.9vw, 13px)', userSelect: 'none', fontStyle: 'italic' }}>
-              Drop cards here
+              {isViewer ? '' : 'Drop cards here'}
             </span>
           </div>
         )}
       </div>
+
+      {config.description && (
+        <Modal
+          title={config.label}
+          open={descOpen}
+          onCancel={() => setDescOpen(false)}
+          footer={null}
+          width={400}
+        >
+          <div style={{ fontSize: 14, color: '#444', lineHeight: 1.6, whiteSpace: 'pre-wrap', paddingTop: 4 }}>
+            {config.description}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

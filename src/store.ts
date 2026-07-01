@@ -23,13 +23,14 @@ export function isKanbanOwner(kanban: Kanban, uid: string): boolean {
 
 export async function loadUserKanbans(uid: string): Promise<Kanban[]> {
   const col = collection(db, 'kanbans');
-  const [ownerSnap, memberSnap, coOwnerSnap] = await Promise.all([
+  const [ownerSnap, memberSnap, coOwnerSnap, viewerSnap] = await Promise.all([
     getDocs(query(col, where('ownerId', '==', uid))),
     getDocs(query(col, where('memberIds', 'array-contains', uid))),
     getDocs(query(col, where('coOwnerIds', 'array-contains', uid))),
+    getDocs(query(col, where('viewerIds', 'array-contains', uid))),
   ]);
   const map = new Map<string, Kanban>();
-  [...ownerSnap.docs, ...memberSnap.docs, ...coOwnerSnap.docs].forEach(d => {
+  [...ownerSnap.docs, ...memberSnap.docs, ...coOwnerSnap.docs, ...viewerSnap.docs].forEach(d => {
     map.set(d.id, { id: d.id, ...d.data() } as Kanban);
   });
   return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
@@ -45,6 +46,7 @@ export async function createKanban(uid: string, name: string, email?: string): P
     ownerId: uid,
     ownerEmail: email ?? '',
     coOwnerIds: [],
+    viewerIds: [],
     memberIds: [],
     memberEmails: {},
     inviteToken,
@@ -109,6 +111,7 @@ export async function removeMember(kanban: Kanban, uid: string): Promise<Kanban>
     ...kanban,
     memberIds: kanban.memberIds.filter(id => id !== uid),
     coOwnerIds: (kanban.coOwnerIds ?? []).filter(id => id !== uid),
+    viewerIds: (kanban.viewerIds ?? []).filter(id => id !== uid),
     memberEmails: emails,
   };
   await saveKanban(updated);
@@ -118,17 +121,21 @@ export async function removeMember(kanban: Kanban, uid: string): Promise<Kanban>
 export async function setMemberRole(
   kanban: Kanban,
   uid: string,
-  role: 'co-owner' | 'member',
+  role: 'co-owner' | 'member' | 'viewer',
 ): Promise<Kanban> {
   const coOwnerIds = kanban.coOwnerIds ?? [];
+  const viewerIds = kanban.viewerIds ?? [];
   const updated: Kanban = {
     ...kanban,
     coOwnerIds: role === 'co-owner'
       ? [...new Set([...coOwnerIds, uid])]
       : coOwnerIds.filter(id => id !== uid),
-    memberIds: role === 'member' && !kanban.memberIds.includes(uid)
-      ? [...kanban.memberIds, uid]
-      : kanban.memberIds,
+    memberIds: role === 'member'
+      ? [...new Set([...kanban.memberIds, uid])]
+      : kanban.memberIds.filter(id => id !== uid),
+    viewerIds: role === 'viewer'
+      ? [...new Set([...viewerIds, uid])]
+      : viewerIds.filter(id => id !== uid),
   };
   await saveKanban(updated);
   return updated;
