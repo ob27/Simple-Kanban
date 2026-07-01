@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Spin, Tag, Tooltip } from 'antd';
 import { PlusOutlined, LogoutOutlined, TeamOutlined } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
-import { loadUserKanbans, ensureDefaultKanban, isKanbanOwner } from '../store';
+import { subscribeUserKanbans, ensureDefaultKanban, isKanbanOwner } from '../store';
 import type { Kanban } from '../types';
 import { CreateKanbanModal } from '../components/CreateKanbanModal';
 import { AccessModal } from '../components/AccessModal';
@@ -22,10 +22,22 @@ export function Dashboard() {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    ensureDefaultKanban(user.uid, user.email ?? undefined)
-      .then(() => loadUserKanbans(user.uid))
-      .then(setKanbans)
-      .finally(() => setLoading(false));
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+
+    // Ensure new users get a default board, then open a live subscription.
+    ensureDefaultKanban(user.uid, user.email ?? undefined).catch(() => {}).finally(() => {
+      if (cancelled) return;
+      unsub = subscribeUserKanbans(user.uid, kanbans => {
+        setKanbans(kanbans);
+        setLoading(false);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, [user]);
 
   function onCreated(kanban: Kanban) {

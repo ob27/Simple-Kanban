@@ -1,6 +1,6 @@
 import {
   doc, getDoc, setDoc, deleteDoc, collection,
-  query, where, getDocs, arrayUnion, updateDoc,
+  query, where, getDocs, arrayUnion, updateDoc, onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { Kanban } from './types';
@@ -20,6 +20,44 @@ export function isKanbanOwner(kanban: Kanban, uid: string): boolean {
 }
 
 // ── Kanban CRUD ──────────────────────────────────────────────────────────────
+
+// Real-time subscription to all kanbans the user can access.
+// Calls onChange whenever any kanban is added, removed, or updated.
+// Returns an unsubscribe function.
+export function subscribeUserKanbans(uid: string, onChange: (kanbans: Kanban[]) => void): () => void {
+  const col = collection(db, 'kanbans');
+  // Each listener owns a slice of the merged map.
+  // We key the outer map by query name so each listener only touches its own slice.
+  const slices: Record<string, Map<string, Kanban>> = {
+    owner: new Map(), member: new Map(), coOwner: new Map(), viewer: new Map(),
+  };
+
+  function rebuild() {
+    const merged = new Map<string, Kanban>();
+    for (const slice of Object.values(slices)) {
+      for (const [id, k] of slice) merged.set(id, k);
+    }
+    onChange(Array.from(merged.values()).sort((a, b) => a.createdAt - b.createdAt));
+  }
+
+  const makeUnsub = (sliceKey: string, q: ReturnType<typeof query>) =>
+    onSnapshot(q, snap => {
+      const slice = slices[sliceKey];
+      // Rebuild slice from the full current snapshot (handles removes automatically)
+      slice.clear();
+      snap.forEach(d => slice.set(d.id, { id: d.id, ...(d.data() as object) } as Kanban));
+      rebuild();
+    }, () => {}); // ignore permission errors on individual queries
+
+  const unsubs = [
+    makeUnsub('owner',   query(col, where('ownerId',    '==',            uid))),
+    makeUnsub('member',  query(col, where('memberIds',  'array-contains', uid))),
+    makeUnsub('coOwner', query(col, where('coOwnerIds', 'array-contains', uid))),
+    makeUnsub('viewer',  query(col, where('viewerIds',  'array-contains', uid))),
+  ];
+
+  return () => unsubs.forEach(u => u());
+}
 
 export async function loadUserKanbans(uid: string): Promise<Kanban[]> {
   const col = collection(db, 'kanbans');
