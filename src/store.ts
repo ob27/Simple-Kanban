@@ -165,7 +165,9 @@ export async function joinKanban(kanbanId: string, uid: string, email?: string):
 
 export async function ensureDefaultKanban(uid: string, email?: string): Promise<void> {
   const existing = await loadUserKanbans(uid);
-  if (existing.length === 0) {
+  // Only count kanbans the user owns — shared/invited boards don't count
+  const owned = existing.filter(k => k.ownerId === uid);
+  if (owned.length === 0) {
     await createKanban(uid, 'AIM Kanban', email);
   }
 }

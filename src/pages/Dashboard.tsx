@@ -176,6 +176,11 @@ function KanbanCard({ kanban, isOwner, onClick, onManageAccess }: { kanban: Kanb
             )}
           </div>
         </div>
+        {!isOwner && kanban.ownerEmail && (
+          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
+            Shared by {kanban.ownerEmail}
+          </div>
+        )}
         <MiniProgressBar kanban={kanban} />
         <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
           {kanban.cards.length} card{kanban.cards.length !== 1 ? 's' : ''}
