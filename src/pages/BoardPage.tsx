@@ -17,7 +17,7 @@ export function BoardPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { kanban, setKanban, loading, notFound } = useKanban(id!);
+  const { kanban, setKanban, remoteVersion, loading, notFound } = useKanban(id!);
 
   const [editTotal, setEditTotal] = useState(false);
   const [editValue, setEditValue] = useState(0);
@@ -26,10 +26,9 @@ export function BoardPage() {
   const isOwner = kanban && user ? isKanbanOwner(kanban, user.uid) : false;
   const { isMobile } = useBreakpoint();
 
-  const backlogColId = kanban?.backlogColumnId ?? kanban?.columns[0]?.id;
-  const backlogCount = kanban ? kanban.cards.filter(c => c.columnId === backlogColId).length : 0;
+  const totalCardCount = kanban ? kanban.cards.length : 0;
   const effectiveTotal = kanban
-    ? (kanban.totalFromBacklog ? Math.max(backlogCount, 1) : kanban.totalEstimated)
+    ? (kanban.totalFromBacklog ? Math.max(totalCardCount, 1) : kanban.totalEstimated)
     : 1;
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,6 +43,8 @@ export function BoardPage() {
 
   useEffect(() => {
     if (!kanban || !initialised.current) return;
+    // Skip save when this state came from Firestore (remote update, not local edit)
+    if (kanban === remoteVersion.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => saveKanban(kanban), 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
@@ -98,11 +99,11 @@ export function BoardPage() {
           checked={kanban.totalFromBacklog ?? false}
           onChange={v => setKanban({ ...kanban, totalFromBacklog: v })}
         />
-        <span style={{ fontSize: 13, color: '#444' }}>Use backlog column count</span>
+        <span style={{ fontSize: 13, color: '#444' }}>Use total card count</span>
       </div>
       {kanban.totalFromBacklog ? (
         <div style={{ fontSize: 13, color: '#888' }}>
-          Backlog: <strong style={{ color: '#1a1a2e' }}>{backlogCount}</strong> card{backlogCount !== 1 ? 's' : ''}
+          Total: <strong style={{ color: '#1a1a2e' }}>{totalCardCount}</strong> card{totalCardCount !== 1 ? 's' : ''}
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
