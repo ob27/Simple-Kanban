@@ -3,6 +3,7 @@ import { Modal, Input, Button, Form } from 'antd';
 import { useAuth } from '../AuthContext';
 import { createKanban } from '../store';
 import type { Kanban } from '../types';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 interface Props {
   open: boolean;
@@ -14,6 +15,7 @@ export function CreateKanbanModal({ open, onClose, onCreated }: Props) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
+  const { isMobile } = useBreakpoint();
 
   async function handleSubmit({ name }: { name: string }) {
     if (!user) return;
@@ -34,6 +36,7 @@ export function CreateKanbanModal({ open, onClose, onCreated }: Props) {
       onCancel={onClose}
       footer={null}
       destroyOnClose
+      width={isMobile ? 'calc(100vw - 24px)' : 520}
     >
       <Form form={form} layout="vertical" onFinish={handleSubmit} style={{ marginTop: 8 }}>
         <Form.Item

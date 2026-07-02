@@ -39,7 +39,7 @@ export function FolderInvitePage() {
   useEffect(() => {
     if (!user || !invite || hasJoined.current) return;
     hasJoined.current = true;
-    joinFolder(invite.folderId, user.uid, user.email ?? undefined, invite.kanbanIds)
+    joinFolder(invite.folderId, user.uid, user.email ?? undefined, invite.kanbanIds, invite.role === 'editor' ? 'editor' : 'viewer')
       .catch(() => {})
       .finally(() => navigate('/'));
   }, [user, invite, navigate]);
@@ -106,7 +106,9 @@ export function FolderInvitePage() {
           <div style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.3px' }}>
             Simple Kanban <span style={{ fontWeight: 400, color: '#aaa', fontSize: 14 }}>by Oestler</span>
           </div>
-          <div style={{ marginTop: 20, fontSize: 13, color: '#888' }}>You've been invited to a folder</div>
+          <div style={{ marginTop: 20, fontSize: 13, color: '#888' }}>
+            You've been invited as a <strong>{invite?.role === 'editor' ? 'Editor' : 'Viewer'}</strong>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4 }}>
             <FolderOutlined style={{ fontSize: 18, color: '#1a1a2e' }} />
             <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a2e' }}>{invite?.folderName}</div>

@@ -1,9 +1,9 @@
 import {
   doc, getDoc, setDoc, deleteDoc, collection,
-  query, where, getDocs, arrayUnion, updateDoc, onSnapshot,
+  query, where, getDocs, arrayUnion, arrayRemove, updateDoc, onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Kanban, Folder } from './types';
+import type { Kanban, Folder, FolderRole } from './types';
 import {
   buildDefaultColumns,
   DEFAULT_TOTAL_ESTIMATED,
@@ -216,32 +216,44 @@ export async function ensureDefaultKanban(uid: string, email?: string): Promise<
 export async function createFolder(uid: string, name: string, email?: string): Promise<Folder> {
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
+  const editorInviteToken = crypto.randomUUID();
   const folder: Folder = {
     id, name, ownerId: uid, ownerEmail: email ?? '',
-    memberIds: [], memberEmails: {}, kanbanIds: [],
-    inviteToken, createdAt: Date.now(),
+    memberIds: [], editorIds: [], memberEmails: {}, kanbanIds: [],
+    inviteToken, editorInviteToken, createdAt: Date.now(),
   };
   await Promise.all([
     setDoc(doc(db, 'folders', id), folder),
     setDoc(doc(db, 'folderInvites', inviteToken), {
-      folderId: id, folderName: name, ownerEmail: email ?? '', kanbanIds: [],
+      folderId: id, folderName: name, ownerEmail: email ?? '', kanbanIds: [], role: 'viewer',
+    }),
+    setDoc(doc(db, 'folderInvites', editorInviteToken), {
+      folderId: id, folderName: name, ownerEmail: email ?? '', kanbanIds: [], role: 'editor',
     }),
   ]);
   return folder;
 }
 
 export async function deleteFolder(folder: Folder): Promise<void> {
-  await Promise.all([
+  const ops = [
     deleteDoc(doc(db, 'folders', folder.id)),
     deleteDoc(doc(db, 'folderInvites', folder.inviteToken)),
-  ]);
+  ];
+  if (folder.editorInviteToken) {
+    ops.push(deleteDoc(doc(db, 'folderInvites', folder.editorInviteToken)));
+  }
+  await Promise.all(ops);
 }
 
 export async function renameFolder(folder: Folder, name: string): Promise<void> {
-  await Promise.all([
+  const ops: Promise<void>[] = [
     updateDoc(doc(db, 'folders', folder.id), { name }),
     updateDoc(doc(db, 'folderInvites', folder.inviteToken), { folderName: name }),
-  ]);
+  ];
+  if (folder.editorInviteToken) {
+    ops.push(updateDoc(doc(db, 'folderInvites', folder.editorInviteToken), { folderName: name }));
+  }
+  await Promise.all(ops);
 }
 
 export async function addKanbanToFolder(
@@ -250,17 +262,25 @@ export async function addKanbanToFolder(
   allKanbans: Kanban[],
 ): Promise<void> {
   const newIds = [...new Set([...folder.kanbanIds, kanbanId])];
-  await Promise.all([
+  const inviteOps: Promise<void>[] = [
     updateDoc(doc(db, 'folders', folder.id), { kanbanIds: newIds }),
     updateDoc(doc(db, 'folderInvites', folder.inviteToken), { kanbanIds: newIds }),
-  ]);
-  // Propagate access: if folder owner owns this kanban and there are members, add them
+  ];
+  if (folder.editorInviteToken) {
+    inviteOps.push(updateDoc(doc(db, 'folderInvites', folder.editorInviteToken), { kanbanIds: newIds }));
+  }
+  await Promise.all(inviteOps);
+  // Propagate access: editors get member role, viewers get viewer role
   if (folder.memberIds.length > 0) {
     const kanban = allKanbans.find(k => k.id === kanbanId);
     if (kanban && kanban.ownerId === folder.ownerId) {
+      const editorIds = folder.editorIds ?? [];
       await Promise.all(folder.memberIds.map(memberId => {
         const memberEmail = folder.memberEmails?.[memberId];
-        const update: Record<string, unknown> = { memberIds: arrayUnion(memberId) };
+        const isEditor = editorIds.includes(memberId);
+        const update: Record<string, unknown> = isEditor
+          ? { memberIds: arrayUnion(memberId) }
+          : { viewerIds: arrayUnion(memberId) };
         if (memberEmail) update[`memberEmails.${memberId}`] = memberEmail;
         return updateDoc(doc(db, 'kanbans', kanbanId), update).catch(() => {});
       }));
@@ -315,6 +335,7 @@ export interface FolderInviteInfo {
   folderName: string;
   ownerEmail: string;
   kanbanIds: string[];
+  role: FolderRole;
 }
 
 export async function resolveFolderInvite(token: string): Promise<FolderInviteInfo | null> {
@@ -326,6 +347,7 @@ export async function resolveFolderInvite(token: string): Promise<FolderInviteIn
     folderName: d.folderName as string,
     ownerEmail: d.ownerEmail as string,
     kanbanIds: (d.kanbanIds as string[]) ?? [],
+    role: (d.role as FolderRole | undefined) ?? 'viewer',
   };
 }
 
@@ -334,14 +356,74 @@ export async function joinFolder(
   uid: string,
   email?: string,
   kanbanIds: string[] = [],
+  role: 'editor' | 'viewer' = 'viewer',
 ): Promise<void> {
   const folderUpdate: Record<string, unknown> = { memberIds: arrayUnion(uid) };
+  if (role === 'editor') folderUpdate.editorIds = arrayUnion(uid);
   if (email) folderUpdate[`memberEmails.${uid}`] = email;
   await updateDoc(doc(db, 'folders', folderId), folderUpdate);
-  // Self-add to each kanban in the folder
+  // Self-add to each kanban — editors get member role, viewers get viewer role
   await Promise.all(kanbanIds.map(kanbanId => {
-    const kanbanUpdate: Record<string, unknown> = { memberIds: arrayUnion(uid) };
+    const kanbanUpdate: Record<string, unknown> = role === 'editor'
+      ? { memberIds: arrayUnion(uid) }
+      : { viewerIds: arrayUnion(uid) };
     if (email) kanbanUpdate[`memberEmails.${uid}`] = email;
     return updateDoc(doc(db, 'kanbans', kanbanId), kanbanUpdate).catch(() => {});
   }));
+}
+
+export async function setFolderMemberRole(
+  folder: Folder,
+  uid: string,
+  newRole: 'editor' | 'viewer',
+): Promise<void> {
+  const editorIds = folder.editorIds ?? [];
+  const folderUpdate: Record<string, unknown> = {};
+  if (newRole === 'editor' && !editorIds.includes(uid)) {
+    folderUpdate.editorIds = arrayUnion(uid);
+  } else if (newRole === 'viewer' && editorIds.includes(uid)) {
+    folderUpdate.editorIds = arrayRemove(uid);
+  }
+  if (Object.keys(folderUpdate).length > 0) {
+    await updateDoc(doc(db, 'folders', folder.id), folderUpdate);
+  }
+  // Update each folder kanban: move member between memberIds and viewerIds
+  await Promise.all(folder.kanbanIds.map(async kanbanId => {
+    const kanbanUpdate: Record<string, unknown> = newRole === 'editor'
+      ? { memberIds: arrayUnion(uid), viewerIds: arrayRemove(uid) }
+      : { viewerIds: arrayUnion(uid), memberIds: arrayRemove(uid) };
+    return updateDoc(doc(db, 'kanbans', kanbanId), kanbanUpdate).catch(() => {});
+  }));
+}
+
+export async function removeFolderMember(folder: Folder, uid: string): Promise<void> {
+  const emails = { ...(folder.memberEmails ?? {}) };
+  delete emails[uid];
+  await updateDoc(doc(db, 'folders', folder.id), {
+    memberIds: arrayRemove(uid),
+    editorIds: arrayRemove(uid),
+    memberEmails: emails,
+  });
+  // Remove from all folder kanbans
+  await Promise.all(folder.kanbanIds.map(kanbanId =>
+    updateDoc(doc(db, 'kanbans', kanbanId), {
+      memberIds: arrayRemove(uid),
+      viewerIds: arrayRemove(uid),
+    }).catch(() => {}),
+  ));
+}
+
+export async function generateEditorInvite(folder: Folder): Promise<string> {
+  const token = crypto.randomUUID();
+  await Promise.all([
+    updateDoc(doc(db, 'folders', folder.id), { editorInviteToken: token }),
+    setDoc(doc(db, 'folderInvites', token), {
+      folderId: folder.id,
+      folderName: folder.name,
+      ownerEmail: folder.ownerEmail ?? '',
+      kanbanIds: folder.kanbanIds,
+      role: 'editor',
+    }),
+  ]);
+  return token;
 }

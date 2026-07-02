@@ -3,6 +3,7 @@ import { Modal, Form, Input, Select, Button, Divider, notification } from 'antd'
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { KanbanCard, ColumnConfig } from '../types';
 import { parseCSV } from '../utils/csvImport';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 interface Props {
   columns: ColumnConfig[];
@@ -15,6 +16,7 @@ export function AddCardModal({ columns, onAdd, onImport }: Props) {
   const [importing, setImporting] = useState(false);
   const [form] = Form.useForm<{ title: string; columnId: string; pillValue: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
+  const { isMobile } = useBreakpoint();
 
   function handleSubmit() {
     form.validateFields().then(values => {
@@ -62,7 +64,7 @@ export function AddCardModal({ columns, onAdd, onImport }: Props) {
         onOk={handleSubmit}
         onCancel={() => { setOpen(false); form.resetFields(); }}
         okText="Add Card"
-        width={480}
+        width={isMobile ? 'calc(100vw - 24px)' : 480}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item label="Title" name="title" rules={[{ required: true, message: 'Please enter a title' }]}>

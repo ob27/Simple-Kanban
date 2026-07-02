@@ -3,6 +3,7 @@ export interface ColumnConfig {
   label: string;
   color: string;
   description?: string;
+  maxCards?: number;
 }
 
 export interface CardComment {
@@ -23,16 +24,21 @@ export interface KanbanCard {
   comments?: CardComment[];
 }
 
+export type FolderRole = 'owner' | 'editor' | 'viewer';
+
 export interface Folder {
   id: string;
   name: string;
   ownerId: string;
   ownerEmail?: string;
   memberIds: string[];
+  editorIds: string[];
   memberEmails: Record<string, string>;
   kanbanIds: string[];
   inviteToken: string;
+  editorInviteToken?: string;
   createdAt: number;
+  folderLogoUrl?: string | null;
 }
 
 export interface Kanban {
@@ -51,7 +57,9 @@ export interface Kanban {
   showLifeline?: boolean;
   showLogo?: boolean;
   showKanbanLogo?: boolean;
+  showFolderLogo?: boolean;
   kanbanLogoUrl?: string;
+  wrapCardText?: boolean;
   cardFontSize?: number;
   ownerEmail?: string;
   coOwnerIds?: string[];

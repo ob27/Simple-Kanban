@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Popover, Spin, Switch } from 'antd';
-import { EditOutlined, ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Popover, Spin, Switch, Badge } from 'antd';
+import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined } from '@ant-design/icons';
 import type { KanbanCard } from '../types';
 import { saveKanban, deleteKanban, isKanbanOwner } from '../store';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import { exportKanbanCSV } from '../utils/csvExport';
 import { getWorkspaceSettings } from '../utils/logoUpload';
+import { PillFilterModal } from '../components/PillFilterModal';
 import { useAuth } from '../AuthContext';
 import { ProgressBar } from '../components/ProgressBar';
 import { ProjectLifeline } from '../components/ProjectLifeline';
@@ -25,6 +28,9 @@ export function BoardPage() {
   const [editValue, setEditValue] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [folderLogoUrl, setFolderLogoUrl] = useState<string | null>(null);
+  const [pillFilter, setPillFilter] = useState<Set<string>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const isOwner = kanban && user ? isKanbanOwner(kanban, user.uid) : false;
   const isViewer = kanban && user ? (kanban.viewerIds ?? []).includes(user.uid) : false;
@@ -35,6 +41,13 @@ export function BoardPage() {
     ? (kanban.totalFromBacklog ? Math.max(totalCardCount, 1) : kanban.totalEstimated)
     : 1;
 
+  const uniquePillValues = kanban
+    ? [...new Set(kanban.cards.map(c => c.pillValue).filter((v): v is string => !!v))]
+    : [];
+  const filteredCards = kanban && pillFilter.size > 0
+    ? kanban.cards.filter(c => c.pillValue && pillFilter.has(c.pillValue))
+    : kanban?.cards ?? [];
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialised = useRef(false);
 
@@ -43,6 +56,26 @@ export function BoardPage() {
       setEditValue(kanban.totalEstimated);
       initialised.current = true;
       getWorkspaceSettings(kanban.ownerId).then(s => setLogoUrl(s.boardLogoUrl));
+      // Find the folder containing this kanban.
+      // Firestore security rules only allow queries filtered by ownerId or memberIds,
+      // so we run two simple queries that match the rule, then filter client-side.
+      if (user?.uid) {
+        const col = collection(db, 'folders');
+        Promise.all([
+          getDocs(query(col, where('ownerId', '==', user.uid))).catch(() => null),
+          getDocs(query(col, where('memberIds', 'array-contains', user.uid))).catch(() => null),
+        ]).then(([ownerSnap, memberSnap]) => {
+          const allDocs = [
+            ...(ownerSnap?.docs ?? []),
+            ...(memberSnap?.docs ?? []),
+          ];
+          const found = allDocs.find(d => (d.data().kanbanIds as string[] ?? []).includes(kanban.id));
+          if (found) {
+            const logoUrl = found.data().folderLogoUrl as string | null | undefined;
+            setFolderLogoUrl(logoUrl ?? null);
+          }
+        });
+      }
     }
   }, [kanban]);
 
@@ -77,6 +110,17 @@ export function BoardPage() {
   function deleteCard(cardId: string) {
     if (!kanban) return;
     setKanban({ ...kanban, cards: kanban.cards.filter(c => c.id !== cardId) });
+  }
+
+  function handleCardsChange(newCards: KanbanCard[]) {
+    if (!kanban) return;
+    if (pillFilter.size === 0) {
+      setKanban({ ...kanban, cards: newCards });
+      return;
+    }
+    const visibleIds = new Set(newCards.map(c => c.id));
+    const hidden = kanban.cards.filter(c => !visibleIds.has(c.id));
+    setKanban({ ...kanban, cards: [...newCards, ...hidden] });
   }
 
   function confirmEditTotal() {
@@ -142,6 +186,8 @@ export function BoardPage() {
       {(() => {
         const src = (kanban.showKanbanLogo && kanban.kanbanLogoUrl)
           ? kanban.kanbanLogoUrl
+          : (kanban.showFolderLogo && folderLogoUrl)
+          ? folderLogoUrl
           : (kanban.showLogo && logoUrl) ? logoUrl : null;
         return src ? (
           <div style={{ display: 'flex', alignItems: 'center', paddingBottom: 2 }}>
@@ -162,9 +208,9 @@ export function BoardPage() {
 
       {showProgressBar && (
         <ProgressBar
-          cards={kanban.cards}
+          cards={filteredCards}
           columns={kanban.columns}
-          totalEstimated={effectiveTotal}
+          totalEstimated={pillFilter.size > 0 ? filteredCards.length : effectiveTotal}
           doneColumnId={kanban.doneColumnId}
           groomedColumnId={kanban.groomedColumnId}
         />
@@ -194,7 +240,9 @@ export function BoardPage() {
                   {kanban.name}
                 </span>
                 <span style={{ fontSize: 'clamp(12px, 1.1vw, 16px)', fontWeight: 400, color: '#666', lineHeight: 1 }}>
-                  {kanban.cards.length} of {effectiveTotal} cards
+                  {pillFilter.size > 0
+                    ? `${filteredCards.length} of ${kanban.cards.length} cards`
+                    : `${kanban.cards.length} of ${effectiveTotal} cards`}
                 </span>
                 {!isViewer && <EditOutlined style={{ fontSize: 13, color: '#aaa', marginLeft: 2 }} />}
               </div>
@@ -207,25 +255,41 @@ export function BoardPage() {
           </Popover>
         </div>
 
-        {isOwner && (
-          <Button
-            icon={<SettingOutlined />}
-            size="small"
-            type="text"
-            onClick={() => setSettingsOpen(true)}
-            style={{ color: '#666' }}
-          >
-            {!isMobile && 'Settings'}
-          </Button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {uniquePillValues.length > 0 && (
+            <Badge count={pillFilter.size} size="small" offset={[-4, 4]}>
+              <Button
+                icon={<FilterOutlined />}
+                size="small"
+                type={pillFilter.size > 0 ? 'primary' : 'text'}
+                onClick={() => setFilterOpen(true)}
+                style={pillFilter.size === 0 ? { color: '#666' } : undefined}
+              >
+                {!isMobile && 'Filter'}
+              </Button>
+            </Badge>
+          )}
+          {isOwner && (
+            <Button
+              icon={<SettingOutlined />}
+              size="small"
+              type="text"
+              onClick={() => setSettingsOpen(true)}
+              style={{ color: '#666' }}
+            >
+              {!isMobile && 'Settings'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <KanbanBoard
-        cards={kanban.cards}
+        cards={filteredCards}
         columns={kanban.columns}
-        onCardsChange={cards => setKanban({ ...kanban, cards })}
+        onCardsChange={handleCardsChange}
         onDeleteCard={deleteCard}
         cardFontSize={kanban.cardFontSize}
+        wrapCardText={kanban.wrapCardText}
         isOwner={isOwner}
         isViewer={isViewer}
       />
@@ -246,8 +310,17 @@ export function BoardPage() {
           onChange={setKanban}
           onDelete={handleDeleteKanban}
           onExportCSV={() => exportKanbanCSV(kanban)}
+          folderLogoUrl={folderLogoUrl}
         />
       )}
+
+      <PillFilterModal
+        open={filterOpen}
+        cards={kanban.cards}
+        activeFilter={pillFilter}
+        onFilterChange={setPillFilter}
+        onClose={() => setFilterOpen(false)}
+      />
     </div>
   );
 }

@@ -63,6 +63,22 @@ export async function deleteKanbanLogo(kanbanId: string): Promise<void> {
   }
 }
 
+export async function uploadFolderLogo(folderId: string, file: File): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'png';
+  const storageRef = ref(storage, `logos/folders/${folderId}/logo.${ext}`);
+  await uploadBytes(storageRef, file);
+  const url = await getDownloadURL(storageRef);
+  await setDoc(doc(db, 'folders', folderId), { folderLogoUrl: url }, { merge: true });
+  return url;
+}
+
+export async function deleteFolderLogo(folderId: string): Promise<void> {
+  for (const ext of ['png', 'jpg', 'jpeg', 'svg', 'webp']) {
+    try { await deleteObject(ref(storage, `logos/folders/${folderId}/logo.${ext}`)); } catch { /* skip */ }
+  }
+  await setDoc(doc(db, 'folders', folderId), { folderLogoUrl: null }, { merge: true });
+}
+
 // Legacy compat — used by WorkspaceReport
 export async function getWorkspaceLogo(uid: string): Promise<string | null> {
   const s = await getWorkspaceSettings(uid);

@@ -24,13 +24,15 @@ interface Props {
   onChange: (kanban: Kanban) => void;
   onDelete: () => void;
   onExportCSV: () => void;
+  folderLogoUrl?: string | null;
 }
 
-export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV }: Props) {
+export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV, folderLogoUrl }: Props) {
   const [form] = Form.useForm();
   const [regenerating, setRegenerating] = useState(false);
   const [columnColors, setColumnColors] = useState<string[]>([]);
   const [columnDescriptions, setColumnDescriptions] = useState<string[]>([]);
+  const [columnMaxCards, setColumnMaxCards] = useState<Array<number | undefined>>([]);
   const [kanbanLogoUrl, setKanbanLogoUrl] = useState<string | undefined>(undefined);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoFileRef = useRef<HTMLInputElement>(null);
@@ -40,6 +42,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
     if (open) {
       setColumnColors(kanban.columns.map(c => c.color));
       setColumnDescriptions(kanban.columns.map(c => c.description ?? ''));
+      setColumnMaxCards(kanban.columns.map(c => c.maxCards));
       setKanbanLogoUrl(kanban.kanbanLogoUrl);
       form.setFieldsValue({
         name: kanban.name,
@@ -55,6 +58,8 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         showLifeline: kanban.showLifeline ?? true,
         showLogo: kanban.showLogo ?? false,
         showKanbanLogo: kanban.showKanbanLogo ?? false,
+        showFolderLogo: kanban.showFolderLogo ?? false,
+        wrapCardText: kanban.wrapCardText ?? false,
         cardFontSize: kanban.cardFontSize ?? 15,
         ...Object.fromEntries(kanban.columns.map((c, i) => [`col_${i}`, c.label])),
       });
@@ -68,6 +73,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       label: (vals[`col_${i}`] as string) || col.label,
       color: columnColors[i] ?? col.color,
       description: columnDescriptions[i] ?? col.description ?? '',
+      maxCards: columnMaxCards[i] ?? undefined,
     }));
     onChange({
       ...kanban,
@@ -84,6 +90,8 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       showLifeline: vals.showLifeline as boolean,
       showLogo: vals.showLogo as boolean,
       showKanbanLogo: vals.showKanbanLogo as boolean,
+      showFolderLogo: vals.showFolderLogo as boolean,
+      wrapCardText: vals.wrapCardText as boolean,
       kanbanLogoUrl,
       cardFontSize: vals.cardFontSize as number,
       columns: updatedColumns,
@@ -173,6 +181,30 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
                 style={{ fontSize: 12, color: '#555', width: '100%' }}
               />
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 36, marginTop: 6 }}>
+              <Switch
+                size="small"
+                checked={columnMaxCards[i] !== undefined}
+                onChange={on => {
+                  const next = [...columnMaxCards];
+                  next[i] = on ? 10 : undefined;
+                  setColumnMaxCards(next);
+                }}
+              />
+              <span style={{ fontSize: 12, color: '#888' }}>Limit visible cards</span>
+              {columnMaxCards[i] !== undefined && (
+                <InputNumber
+                  min={1} max={999} size="small"
+                  value={columnMaxCards[i]}
+                  onChange={v => {
+                    const next = [...columnMaxCards];
+                    next[i] = v ?? 1;
+                    setColumnMaxCards(next);
+                  }}
+                  style={{ width: 64 }}
+                />
+              )}
+            </div>
           </div>
         ))}
 
@@ -213,10 +245,25 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
             <Form.Item name="showKanbanLogo" valuePropName="checked" noStyle>
               <Switch
                 size="small"
-                onChange={v => { if (v) form.setFieldValue('showLogo', false); }}
+                onChange={v => { if (v) { form.setFieldValue('showLogo', false); form.setFieldValue('showFolderLogo', false); } }}
               />
             </Form.Item>
             <span style={{ fontSize: 13, color: '#555' }}>Show kanban logo</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Tooltip title={!folderLogoUrl ? 'Set a folder icon in the gallery first' : undefined}>
+              <span style={{ display: 'inline-flex', cursor: !folderLogoUrl ? 'not-allowed' : undefined }}>
+                <Form.Item name="showFolderLogo" valuePropName="checked" noStyle>
+                  <Switch
+                    size="small"
+                    disabled={!folderLogoUrl}
+                    style={!folderLogoUrl ? { pointerEvents: 'none' } : undefined}
+                    onChange={v => { if (v) { form.setFieldValue('showLogo', false); form.setFieldValue('showKanbanLogo', false); } }}
+                  />
+                </Form.Item>
+              </span>
+            </Tooltip>
+            <span style={{ fontSize: 13, color: folderLogoUrl ? '#555' : '#bbb' }}>Show folder icon</span>
           </div>
         </div>
 
@@ -284,7 +331,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
 
         {/* Card font size */}
         <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Card title size</div>
-        <Form.Item name="cardFontSize" style={{ marginBottom: 0 }}>
+        <Form.Item name="cardFontSize" style={{ marginBottom: 10 }}>
           <Select
             options={[
               { value: 11, label: 'Extra small (11px) — for longer titles' },
@@ -295,6 +342,12 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
             ]}
           />
         </Form.Item>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Form.Item name="wrapCardText" valuePropName="checked" noStyle>
+            <Switch size="small" />
+          </Form.Item>
+          <span style={{ fontSize: 13, color: '#555' }}>Wrap card text</span>
+        </div>
 
         {/* Timeline */}
         <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Timeline</div>

@@ -7,23 +7,57 @@ import {
   PlusOutlined, LogoutOutlined, TeamOutlined, SettingOutlined,
   DownloadOutlined, FileTextOutlined, UploadOutlined, DeleteOutlined,
   FolderOutlined, FolderOpenOutlined, RightOutlined, DownOutlined,
-  ShareAltOutlined, EditOutlined, MoreOutlined, FolderAddOutlined,
+  ShareAltOutlined, EditOutlined, MoreOutlined, FolderAddOutlined, PictureOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
 import {
   subscribeUserKanbans, isKanbanOwner,
   subscribeUserFolders, createFolder, deleteFolder, renameFolder,
-  addKanbanToFolder, removeKanbanFromFolder,
+  addKanbanToFolder, removeKanbanFromFolder, generateEditorInvite,
 } from '../store';
-import type { Kanban, Folder } from '../types';
+import type { Kanban, Folder, FolderRole } from '../types';
+import { uploadFolderLogo, deleteFolderLogo } from '../utils/logoUpload';
 import { CreateKanbanModal } from '../components/CreateKanbanModal';
 import { AccessModal } from '../components/AccessModal';
+import { FolderMembersModal } from '../components/FolderMembersModal';
 import { UserAvatar } from '../components/UserAvatar';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { exportAllKanbansCSV } from '../utils/csvExportAll';
 import { getWorkspaceSettings, uploadLogo, deleteLogo, saveNavBgColor, type WorkspaceSettings } from '../utils/logoUpload';
 
 const DEFAULT_SETTINGS: WorkspaceSettings = { navLogoUrl: null, boardLogoUrl: null, navBgColor: '#1a1a2e' };
+
+interface LogoSlotProps {
+  label: string;
+  hint: string;
+  url: string | null;
+  fileRef: React.RefObject<HTMLInputElement>;
+  busy: boolean;
+  previewBg: string;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onDelete: () => void;
+}
+
+function LogoSlot({ label, hint, url, fileRef, busy, previewBg, onUpload, onDelete }: LogoSlotProps) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>{hint}</div>
+      {url && (
+        <div style={{ marginBottom: 10, padding: 10, background: previewBg, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <img src={url} alt="logo preview" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
+          <Button size="small" danger icon={<DeleteOutlined />} loading={busy} onClick={onDelete}>
+            Remove
+          </Button>
+        </div>
+      )}
+      <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={onUpload} style={{ display: 'none' }} />
+      <Button icon={<UploadOutlined />} loading={busy} onClick={() => fileRef.current?.click()} block>
+        {url ? 'Replace' : 'Upload'} logo
+      </Button>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const { user, signOut } = useAuth();
@@ -47,6 +81,11 @@ export function Dashboard() {
   const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState('');
   const [folderBusy, setFolderBusy] = useState(false);
+  const [uploadingIconForFolder, setUploadingIconForFolder] = useState<string | null>(null);
+  const folderIconFileRef = useRef<HTMLInputElement>(null);
+  const pendingFolderIconUpload = useRef<string | null>(null);
+  const [membersFolderId, setMembersFolderId] = useState<string | null>(null);
+  const membersFolder = membersFolderId ? folders.find(f => f.id === membersFolderId) ?? null : null;
 
   useEffect(() => {
     if (!user) return;
@@ -166,10 +205,52 @@ export function Dashboard() {
     }
   }
 
-  function handleCopyFolderInvite(folder: Folder) {
-    const url = `${window.location.origin}/simple-kanban/folder-invite/${folder.inviteToken}`;
+  async function handleFolderIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const folderId = pendingFolderIconUpload.current;
+    e.target.value = '';
+    if (!file || !folderId) return;
+    setUploadingIconForFolder(folderId);
+    try {
+      await uploadFolderLogo(folderId, file);
+      message.success('Folder icon uploaded');
+    } catch {
+      message.error('Upload failed');
+    } finally {
+      setUploadingIconForFolder(null);
+      pendingFolderIconUpload.current = null;
+    }
+  }
+
+  async function handleDeleteFolderIcon(folderId: string) {
+    setUploadingIconForFolder(folderId);
+    try {
+      await deleteFolderLogo(folderId);
+      message.success('Folder icon removed');
+    } catch {
+      message.error('Failed to remove icon');
+    } finally {
+      setUploadingIconForFolder(null);
+    }
+  }
+
+  async function handleCopyFolderInviteAs(folder: Folder, role: 'editor' | 'viewer') {
+    let token: string;
+    if (role === 'editor') {
+      token = folder.editorInviteToken ?? await generateEditorInvite(folder);
+    } else {
+      token = folder.inviteToken;
+    }
+    const url = `${window.location.origin}/simple-kanban/folder-invite/${token}`;
     navigator.clipboard.writeText(url);
-    message.success('Folder invite link copied');
+    message.success(`${role === 'editor' ? 'Editor' : 'Viewer'} invite link copied`);
+  }
+
+  function getFolderRole(folder: Folder): FolderRole {
+    if (!user) return 'viewer';
+    if (folder.ownerId === user.uid) return 'owner';
+    if ((folder.editorIds ?? []).includes(user.uid)) return 'editor';
+    return 'viewer';
   }
 
   function toggleCollapse(folderId: string) {
@@ -184,7 +265,9 @@ export function Dashboard() {
   // ── Derived state ────────────────────────────────────────────────────────────
 
   const ownedKanbans = kanbans.filter(k => user && k.ownerId === user.uid);
-  const ownedFolders = folders.filter(f => f.ownerId === user?.uid);
+  const editableFolders = folders.filter(f =>
+    f.ownerId === user?.uid || (f.editorIds ?? []).includes(user?.uid ?? '')
+  );
   const allFolderKanbanIds = new Set(folders.flatMap(f => f.kanbanIds));
   const ungroupedKanbans = kanbans.filter(k => !allFolderKanbanIds.has(k.id));
   const hasFolders = folders.length > 0;
@@ -208,40 +291,6 @@ export function Dashboard() {
     gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(260px, 1fr))',
     gap: 16,
   } as React.CSSProperties;
-
-  function LogoSlot({ slot, label, hint }: { slot: 'nav' | 'board'; label: string; hint: string }) {
-    const url = slot === 'nav' ? settings.navLogoUrl : settings.boardLogoUrl;
-    const fileRef = slot === 'nav' ? navFileRef : boardFileRef;
-    const busy = uploading === slot;
-    return (
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 3 }}>{label}</div>
-        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>{hint}</div>
-        {url && (
-          <div style={{
-            marginBottom: 10, padding: 10,
-            background: slot === 'nav' ? navBg : '#EEF0F5',
-            borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            <img src={url} alt="logo preview" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
-            <Button size="small" danger icon={<DeleteOutlined />} loading={busy} onClick={() => handleDelete(slot)}>
-              Remove
-            </Button>
-          </div>
-        )}
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".png,.jpg,.jpeg,.svg,.webp"
-          onChange={e => handleUpload(slot, e)}
-          style={{ display: 'none' }}
-        />
-        <Button icon={<UploadOutlined />} loading={busy} onClick={() => fileRef.current?.click()} block>
-          {url ? 'Replace' : 'Upload'} logo
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#EEF0F5', display: 'flex', flexDirection: 'column' }}>
@@ -321,28 +370,70 @@ export function Dashboard() {
                     <span style={{ color: '#666', fontSize: 12, transition: 'transform 0.15s', display: 'inline-flex' }}>
                       {isCollapsed ? <RightOutlined /> : <DownOutlined />}
                     </span>
-                    {isCollapsed
-                      ? <FolderOutlined style={{ color: '#555', fontSize: 16 }} />
-                      : <FolderOpenOutlined style={{ color: '#555', fontSize: 16 }} />
-                    }
-                    <span style={{ fontWeight: 700, fontSize: 15, color: '#1a1a2e', flex: 1 }}>
+                    {folder.folderLogoUrl ? (
+                      <img
+                        src={folder.folderLogoUrl}
+                        alt="folder icon"
+                        style={{ height: 22, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+                      />
+                    ) : (
+                      isCollapsed
+                        ? <FolderOutlined style={{ color: '#555', fontSize: 16 }} />
+                        : <FolderOpenOutlined style={{ color: '#555', fontSize: 16 }} />
+                    )}
+                    <span style={{ fontWeight: 700, fontSize: 15, color: '#1a1a2e', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {folder.name}
                     </span>
                     <span style={{ fontSize: 12, color: '#999', marginRight: 4 }}>
                       {folderKanbans.length} kanban{folderKanbans.length !== 1 ? 's' : ''}
                     </span>
-                    {!isOwner && <Tag color="blue" style={{ marginRight: 4 }}>Shared</Tag>}
+                    {!isOwner && (
+                      <Tag
+                        color={getFolderRole(folder) === 'editor' ? 'blue' : 'default'}
+                        style={{ marginRight: 4 }}
+                      >
+                        {getFolderRole(folder) === 'editor' ? 'Editor' : 'Viewer'}
+                      </Tag>
+                    )}
 
-                    {/* Share button — owner only */}
+                    {/* Share button — owner only: dropdown with editor/viewer link */}
                     {isOwner && (
-                      <Tooltip title="Copy invite link">
+                      <Dropdown
+                        trigger={['click']}
+                        menu={{
+                          items: [
+                            { key: 'editor', icon: <EditOutlined />, label: 'Copy editor invite link' },
+                            { key: 'viewer', icon: <ShareAltOutlined />, label: 'Copy viewer invite link' },
+                          ],
+                          onClick: ({ key, domEvent }) => {
+                            domEvent.stopPropagation();
+                            handleCopyFolderInviteAs(folder, key as 'editor' | 'viewer');
+                          },
+                        }}
+                      >
+                        <Tooltip title="Share folder">
+                          <button
+                            onClick={e => e.stopPropagation()}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', color: '#999', borderRadius: 4, lineHeight: 1, fontSize: 14 }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#555')}
+                            onMouseLeave={e => (e.currentTarget.style.color = '#999')}
+                          >
+                            <ShareAltOutlined />
+                          </button>
+                        </Tooltip>
+                      </Dropdown>
+                    )}
+
+                    {/* Manage members — owner only */}
+                    {isOwner && (
+                      <Tooltip title="Manage members">
                         <button
-                          onClick={e => { e.stopPropagation(); handleCopyFolderInvite(folder); }}
+                          onClick={e => { e.stopPropagation(); setMembersFolderId(folder.id); }}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', color: '#999', borderRadius: 4, lineHeight: 1, fontSize: 14 }}
                           onMouseEnter={e => (e.currentTarget.style.color = '#555')}
                           onMouseLeave={e => (e.currentTarget.style.color = '#999')}
                         >
-                          <ShareAltOutlined />
+                          <TeamOutlined />
                         </button>
                       </Tooltip>
                     )}
@@ -360,6 +451,17 @@ export function Dashboard() {
                             },
                             { type: 'divider' },
                             {
+                              key: 'upload-icon',
+                              icon: <PictureOutlined />,
+                              label: uploadingIconForFolder === folder.id ? 'Uploading…' : 'Upload folder icon',
+                            },
+                            ...(folder.folderLogoUrl ? [{
+                              key: 'remove-icon',
+                              icon: <DeleteOutlined />,
+                              label: 'Remove folder icon',
+                            }] : []),
+                            { type: 'divider' as const },
+                            {
                               key: 'delete',
                               icon: <DeleteOutlined />,
                               label: 'Delete folder',
@@ -372,6 +474,11 @@ export function Dashboard() {
                               setRenamingFolder(folder);
                               setRenamingFolderName(folder.name);
                             }
+                            if (key === 'upload-icon') {
+                              pendingFolderIconUpload.current = folder.id;
+                              folderIconFileRef.current?.click();
+                            }
+                            if (key === 'remove-icon') handleDeleteFolderIcon(folder.id);
                             if (key === 'delete') handleDeleteFolder(folder);
                           },
                         }}
@@ -404,8 +511,9 @@ export function Dashboard() {
                               isOwner={isKanbanOwner(k, user!.uid)}
                               onClick={() => navigate(`/k/${k.id}`)}
                               onManageAccess={() => setAccessKanban(k)}
-                              ownedFolders={ownedFolders}
+                              editableFolders={editableFolders}
                               currentFolder={folder}
+                              currentFolderRole={getFolderRole(folder)}
                               onAddToFolder={targetFolderId => {
                                 const target = folders.find(f => f.id === targetFolderId);
                                 if (target) handleAddToFolder(target, k.id);
@@ -442,8 +550,9 @@ export function Dashboard() {
                       isOwner={isKanbanOwner(k, user!.uid)}
                       onClick={() => navigate(`/k/${k.id}`)}
                       onManageAccess={() => setAccessKanban(k)}
-                      ownedFolders={ownedFolders}
+                      editableFolders={editableFolders}
                       currentFolder={undefined}
+                      currentFolderRole={undefined}
                       onAddToFolder={targetFolderId => {
                         const target = folders.find(f => f.id === targetFolderId);
                         if (target) handleAddToFolder(target, k.id);
@@ -489,6 +598,23 @@ export function Dashboard() {
           }}
         />
       )}
+
+      {membersFolder && (
+        <FolderMembersModal
+          open
+          folder={membersFolder}
+          onClose={() => setMembersFolderId(null)}
+        />
+      )}
+
+      {/* Hidden input for folder icon upload */}
+      <input
+        ref={folderIconFileRef}
+        type="file"
+        accept=".png,.jpg,.jpeg,.svg,.webp"
+        style={{ display: 'none' }}
+        onChange={handleFolderIconUpload}
+      />
 
       {/* Create folder modal */}
       <Modal
@@ -560,14 +686,24 @@ export function Dashboard() {
         </div>
 
         <LogoSlot
-          slot="nav"
           label="Gallery navigation logo"
           hint="Replaces the 'Simple Kanban' text. Use a negative (light) version for dark nav backgrounds."
+          url={settings.navLogoUrl}
+          fileRef={navFileRef}
+          busy={uploading === 'nav'}
+          previewBg={navBg}
+          onUpload={e => handleUpload('nav', e)}
+          onDelete={() => handleDelete('nav')}
         />
         <LogoSlot
-          slot="board"
           label="Kanban board logo"
           hint="Shown in the top-left of each board when enabled per-board in Settings. Use a positive (dark/coloured) version for the light grey background."
+          url={settings.boardLogoUrl}
+          fileRef={boardFileRef}
+          busy={uploading === 'board'}
+          previewBg="#EEF0F5"
+          onUpload={e => handleUpload('board', e)}
+          onDelete={() => handleDelete('board')}
         />
 
         <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -614,8 +750,9 @@ interface KanbanCardProps {
   isOwner: boolean;
   onClick: () => void;
   onManageAccess: () => void;
-  ownedFolders: Folder[];
+  editableFolders: Folder[];
   currentFolder?: Folder;
+  currentFolderRole?: FolderRole;
   onAddToFolder: (folderId: string) => void;
   onRemoveFromFolder: () => void;
   onCreateFolder: () => void;
@@ -623,19 +760,20 @@ interface KanbanCardProps {
 
 function KanbanCard({
   kanban, isOwner, onClick, onManageAccess,
-  ownedFolders, currentFolder, onAddToFolder, onRemoveFromFolder, onCreateFolder,
+  editableFolders, currentFolder, currentFolderRole, onAddToFolder, onRemoveFromFolder, onCreateFolder,
 }: KanbanCardProps) {
   const accentColor = kanban.columns[0]?.color ?? '#1a1a2e';
+  const canEditFolder = !currentFolder || currentFolderRole === 'owner' || currentFolderRole === 'editor';
 
   const folderMenuItems = [
-    ...(currentFolder ? [
+    ...(currentFolder && canEditFolder ? [
       { key: '__remove', label: `Remove from "${currentFolder.name}"`, danger: true },
       { type: 'divider' as const },
     ] : []),
-    ...ownedFolders
+    ...editableFolders
       .filter(f => f.id !== currentFolder?.id)
       .map(f => ({ key: f.id, label: `Move to "${f.name}"` })),
-    ...(ownedFolders.length > 0 ? [{ type: 'divider' as const }] : []),
+    ...(editableFolders.filter(f => f.id !== currentFolder?.id).length > 0 ? [{ type: 'divider' as const }] : []),
     { key: '__new', label: 'New folder...' },
   ];
 
@@ -661,34 +799,36 @@ function KanbanCard({
           <span style={{ fontWeight: 700, fontSize: 15, color: '#1a1a2e', lineHeight: 1.3 }}>{kanban.name}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
             {!isOwner && <Tag color="blue">Shared</Tag>}
-            {/* Folder button */}
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: folderMenuItems,
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === '__remove') onRemoveFromFolder();
-                  else if (key === '__new') onCreateFolder();
-                  else onAddToFolder(key);
-                },
-              }}
-            >
-              <Tooltip title={currentFolder ? `In "${currentFolder.name}"` : 'Move to folder'}>
-                <button
-                  onClick={e => e.stopPropagation()}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '2px 4px', borderRadius: 4, lineHeight: 1, fontSize: 14,
-                    color: currentFolder ? '#1677ff' : '#bbb',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.color = currentFolder ? '#0958d9' : '#888')}
-                  onMouseLeave={e => (e.currentTarget.style.color = currentFolder ? '#1677ff' : '#bbb')}
-                >
-                  <FolderOutlined />
-                </button>
-              </Tooltip>
-            </Dropdown>
+            {/* Folder button — show if user can do something with folders */}
+            {(editableFolders.length > 0 || canEditFolder) && (
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: folderMenuItems,
+                  onClick: ({ key, domEvent }) => {
+                    domEvent.stopPropagation();
+                    if (key === '__remove') onRemoveFromFolder();
+                    else if (key === '__new') onCreateFolder();
+                    else onAddToFolder(key);
+                  },
+                }}
+              >
+                <Tooltip title={currentFolder ? `In "${currentFolder.name}"` : 'Move to folder'}>
+                  <button
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      padding: '2px 4px', borderRadius: 4, lineHeight: 1, fontSize: 14,
+                      color: currentFolder ? '#1677ff' : '#bbb',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.color = currentFolder ? '#0958d9' : '#888')}
+                    onMouseLeave={e => (e.currentTarget.style.color = currentFolder ? '#1677ff' : '#bbb')}
+                  >
+                    <FolderOutlined />
+                  </button>
+                </Tooltip>
+              </Dropdown>
+            )}
             {isOwner && (
               <Tooltip title="Manage access">
                 <button

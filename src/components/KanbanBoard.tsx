@@ -21,6 +21,7 @@ interface Props {
   onCardsChange: (cards: KanbanCard[]) => void;
   onDeleteCard: (cardId: string) => void;
   cardFontSize?: number;
+  wrapCardText?: boolean;
   isOwner?: boolean;
   isViewer?: boolean;
 }
@@ -43,7 +44,7 @@ function launchFireworks() {
   explode(0.3, 0.3, 1500, 70); explode(0.7, 0.3, 1560, 70);
 }
 
-export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardFontSize, isOwner, isViewer }: Props) {
+export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
   const { isMobile, isTablet } = useBreakpoint();
@@ -170,7 +171,9 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
               onOpenNotes={setNotesCardId}
               minWidth={colMinWidth}
               cardFontSize={cardFontSize}
+              wrapCardText={wrapCardText}
               isViewer={isViewer}
+              maxCards={col.maxCards}
             />
           ))}
         </div>
@@ -182,6 +185,8 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
               columnColor={colorMap[activeCard.columnId] ?? '#888'}
               onDelete={() => {}}
               isOverlay
+              cardFontSize={cardFontSize}
+              wrapCardText={wrapCardText}
             />
           )}
         </DragOverlay>

@@ -13,11 +13,15 @@ interface Props {
   onOpenNotes?: (cardId: string) => void;
   minWidth?: number;
   cardFontSize?: number;
+  wrapCardText?: boolean;
   isViewer?: boolean;
+  maxCards?: number;
 }
 
-export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, isViewer }: Props) {
+export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, wrapCardText, isViewer, maxCards }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: config.id });
+  const visibleCards = maxCards ? cards.slice(0, maxCards) : cards;
+  const hiddenCount = cards.length - visibleCards.length;
   const [descOpen, setDescOpen] = useState(false);
 
   return (
@@ -65,8 +69,8 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
         background: isOver ? '#F2F7FF' : '#F8F9FB',
         transition: 'background 0.15s ease',
       }}>
-        <SortableContext items={cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
-          {cards.map(card => (
+        <SortableContext items={visibleCards.map(c => c.id)} strategy={verticalListSortingStrategy}>
+          {visibleCards.map(card => (
             <KanbanCardComponent
               key={card.id}
               card={card}
@@ -74,6 +78,7 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
               onDelete={onDeleteCard}
               onOpenNotes={onOpenNotes ? () => onOpenNotes(card.id) : undefined}
               cardFontSize={cardFontSize}
+              wrapCardText={wrapCardText}
               isViewer={isViewer}
             />
           ))}
@@ -87,6 +92,19 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
           </div>
         )}
       </div>
+
+      {hiddenCount > 0 && (
+        <div style={{
+          textAlign: 'center', padding: '7px 0',
+          fontSize: 12, fontWeight: 600,
+          color: config.color, opacity: 0.75,
+          borderTop: `1px solid ${config.color}22`,
+          background: '#fff',
+          flexShrink: 0,
+        }}>
+          +{hiddenCount} more card{hiddenCount !== 1 ? 's' : ''} not shown
+        </div>
+      )}
 
       {config.description && (
         <Modal

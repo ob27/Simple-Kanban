@@ -6,6 +6,7 @@ import { db } from '../firebase';
 import type { Kanban } from '../types';
 import { removeMember, setMemberRole } from '../store';
 import { UserAvatar } from './UserAvatar';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 interface Props {
   kanban: Kanban;
@@ -29,6 +30,7 @@ function resolveEmail(uid: string, kanban: Kanban, currentUid: string, currentEm
 
 export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChange }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
+  const { isMobile } = useBreakpoint();
 
   const coOwnerIds = kanban.coOwnerIds ?? [];
   const viewerIds = kanban.viewerIds ?? [];
@@ -122,7 +124,7 @@ export function AccessModal({ kanban, currentUid, currentEmail, onClose, onChang
       open
       onCancel={onClose}
       footer={null}
-      width={480}
+      width={isMobile ? 'calc(100vw - 24px)' : 480}
     >
       <div style={{ marginBottom: 8, fontSize: 12, color: '#aaa' }}>
         {entries.length} {entries.length === 1 ? 'person has' : 'people have'} access

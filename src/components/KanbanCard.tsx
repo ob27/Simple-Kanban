@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
+import { Tooltip } from 'antd';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { HolderOutlined, CloseOutlined } from '@ant-design/icons';
@@ -12,6 +13,7 @@ interface Props {
   onDelete: (id: string) => void;
   onOpenNotes?: () => void;
   cardFontSize?: number;
+  wrapCardText?: boolean;
   isOverlay?: boolean;
   isViewer?: boolean;
 }
@@ -19,14 +21,21 @@ interface Props {
 const LONG_PRESS_DELAY = 380;
 const DOUBLE_TAP_MS = 300;
 
-export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontSize, isOverlay = false, isViewer = false }: Props) {
+export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontSize, wrapCardText = false, isOverlay = false, isViewer = false }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
 
   const [hovered, setHovered] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [pillTruncated, setPillTruncated] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapTime = useRef(0);
   const nodeRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const el = pillRef.current;
+    if (el) setPillTruncated(el.scrollWidth > el.clientWidth);
+  }, [card.pillValue]);
 
   const combinedRef = useCallback((node: HTMLDivElement | null) => {
     setNodeRef(node);
@@ -121,26 +130,36 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
           pointerEvents: 'none', transition: 'opacity 0.15s ease',
         }} />
 
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%', textAlign: 'center' }}>
+        <span style={{
+          overflow: 'hidden',
+          textOverflow: wrapCardText ? 'clip' : 'ellipsis',
+          whiteSpace: wrapCardText ? 'normal' : 'nowrap',
+          maxWidth: '100%',
+          textAlign: 'center',
+          wordBreak: wrapCardText ? 'break-word' : undefined,
+          lineHeight: wrapCardText ? 1.35 : undefined,
+        }}>
           {card.title}
         </span>
 
         {card.pillValue && (
-          <span style={{
-            marginTop: 5,
-            background: 'rgba(255,255,255,0.22)',
-            borderRadius: 20,
-            padding: '2px 10px',
-            fontSize: 'clamp(10px, 0.9vw, 13px)',
-            fontWeight: 500,
-            letterSpacing: '0.01em',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {card.pillValue}
-          </span>
+          <Tooltip title={pillTruncated && !isOverlay ? card.pillValue : undefined} mouseEnterDelay={0.4}>
+            <span ref={pillRef} style={{
+              marginTop: 5,
+              background: 'rgba(255,255,255,0.22)',
+              borderRadius: 20,
+              padding: '2px 10px',
+              fontSize: 'clamp(10px, 0.9vw, 13px)',
+              fontWeight: 500,
+              letterSpacing: '0.01em',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {card.pillValue}
+            </span>
+          </Tooltip>
         )}
 
         {!isOverlay && !isViewer && (

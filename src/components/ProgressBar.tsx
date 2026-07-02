@@ -110,6 +110,15 @@ export function ProgressBar({ cards, columns, totalEstimated, doneColumnId, groo
           </span>
         </div>
       </div>}
+      {isMobile && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 12, color: '#888' }}>
+          <span>
+            <strong style={{ color: '#1A7A4A' }}>{completionPct}%</strong> done
+            &nbsp;·&nbsp;<strong style={{ color: '#444' }}>{inProgress}</strong> in progress
+            &nbsp;·&nbsp;<strong style={{ color: '#444' }}>{groomedPct}%</strong> groomed
+          </span>
+        </div>
+      )}
     </div>
   );
 }
