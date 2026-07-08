@@ -1,19 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Spin, Tag, Tooltip, Drawer, message, Dropdown, Modal, Input,
+  Button, Spin, Tag, Tooltip, Drawer, message, Dropdown, Modal, Input, Switch,
 } from 'antd';
 import {
   PlusOutlined, LogoutOutlined, TeamOutlined, SettingOutlined,
   DownloadOutlined, FileTextOutlined, UploadOutlined, DeleteOutlined,
-  FolderOutlined, FolderOpenOutlined, RightOutlined, DownOutlined,
-  ShareAltOutlined, EditOutlined, MoreOutlined, FolderAddOutlined, PictureOutlined,
+  FolderOutlined, FolderOpenOutlined, RightOutlined, DownOutlined, UpOutlined,
+  ShareAltOutlined, EditOutlined, MoreOutlined, FolderAddOutlined, PictureOutlined, CopyOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
 import {
-  subscribeUserKanbans, isKanbanOwner,
-  subscribeUserFolders, createFolder, deleteFolder, renameFolder,
-  addKanbanToFolder, removeKanbanFromFolder, generateEditorInvite,
+  subscribeUserKanbans, isKanbanOwner, cloneKanban,
+  subscribeUserFolders, createFolder, deleteFolder, renameFolder, reorderFolder,
+  addKanbanToFolder, removeKanbanFromFolder, generateEditorInvite, setFolderAccolades,
 } from '../store';
 import type { Kanban, Folder, FolderRole } from '../types';
 import { uploadFolderLogo, deleteFolderLogo } from '../utils/logoUpload';
@@ -75,11 +75,20 @@ export function Dashboard() {
   const boardFileRef = useRef<HTMLInputElement>(null);
 
   // Folder UI state
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('simple-kanban:collapsedFolders');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const [createFolderId, setCreateFolderId] = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState('');
+  const [renamingFolderAccolades, setRenamingFolderAccolades] = useState(true);
   const [folderBusy, setFolderBusy] = useState(false);
   const [uploadingIconForFolder, setUploadingIconForFolder] = useState<string | null>(null);
   const folderIconFileRef = useRef<HTMLInputElement>(null);
@@ -108,8 +117,25 @@ export function Dashboard() {
     return unsub;
   }, [user]);
 
+  async function handleCloneKanban(kanban: Kanban) {
+    if (!user) return;
+    try {
+      await cloneKanban(kanban, user.uid, user.email ?? undefined);
+      message.success(`Duplicated "${kanban.name}"`);
+    } catch {
+      message.error('Failed to duplicate kanban');
+    }
+  }
+
   function onCreated(kanban: Kanban) {
     setCreateOpen(false);
+    if (createFolderId) {
+      const folder = folders.find(f => f.id === createFolderId);
+      if (folder) {
+        addKanbanToFolder(folder, kanban.id, kanbans).catch(() => message.error('Kanban created, but failed to add to folder'));
+      }
+      setCreateFolderId(null);
+    }
     navigate(`/k/${kanban.id}`);
   }
 
@@ -174,7 +200,12 @@ export function Dashboard() {
     if (!renamingFolder || !renamingFolderName.trim()) return;
     setFolderBusy(true);
     try {
-      await renameFolder(renamingFolder, renamingFolderName.trim());
+      await Promise.all([
+        renameFolder(renamingFolder, renamingFolderName.trim()),
+        renamingFolderAccolades !== (renamingFolder.accoladesEnabled ?? true)
+          ? setFolderAccolades(renamingFolder.id, renamingFolderAccolades)
+          : Promise.resolve(),
+      ]);
       setRenamingFolder(null);
       setRenamingFolderName('');
     } catch {
@@ -258,8 +289,21 @@ export function Dashboard() {
       const next = new Set(prev);
       if (next.has(folderId)) next.delete(folderId);
       else next.add(folderId);
+      localStorage.setItem('simple-kanban:collapsedFolders', JSON.stringify([...next]));
       return next;
     });
+  }
+
+  function handleReorderFolder(folderId: string, direction: -1 | 1) {
+    const idx = folders.findIndex(f => f.id === folderId);
+    const swapIdx = idx + direction;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= folders.length) return;
+    const a = folders[idx];
+    const b = folders[swapIdx];
+    const aOrder = a.order ?? a.createdAt;
+    const bOrder = b.order ?? b.createdAt;
+    reorderFolder(a.id, bOrder);
+    reorderFolder(b.id, aOrder);
   }
 
   // ── Derived state ────────────────────────────────────────────────────────────
@@ -293,7 +337,7 @@ export function Dashboard() {
   } as React.CSSProperties;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#EEF0F5', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100vh', background: '#EEF0F5', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{
         background: navBg,
@@ -306,6 +350,9 @@ export function Dashboard() {
         transition: 'background 0.2s',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <a href="/" style={{ color: subtleTextColor, fontSize: 12, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            &larr; All products
+          </a>
           {settings.navLogoUrl
             ? <img src={settings.navLogoUrl} alt="logo" style={{ height: 34, width: 'auto', objectFit: 'contain' }} />
             : <span style={{ color: textColor, fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>
@@ -327,7 +374,7 @@ export function Dashboard() {
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, padding: '32px 24px', maxWidth: 1100, width: '100%', margin: '0 auto' }}>
+      <div className="scrollbar-hidden" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '32px 24px', maxWidth: 1100, width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1a1a2e', margin: 0 }}>Your Kanbans</h1>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -348,7 +395,7 @@ export function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
             {/* Folders */}
-            {folders.map(folder => {
+            {folders.map((folder, folderIdx) => {
               const folderKanbans = kanbans.filter(k => folder.kanbanIds.includes(k.id));
               const isOwner = folder.ownerId === user!.uid;
               const isCollapsed = collapsedFolders.has(folder.id);
@@ -394,6 +441,26 @@ export function Dashboard() {
                       >
                         {getFolderRole(folder) === 'editor' ? 'Editor' : 'Viewer'}
                       </Tag>
+                    )}
+
+                    {/* Reorder — owner only: order is shared on the folder doc, so
+                        letting any viewer/editor drag it would silently reshuffle
+                        everyone else's dashboard too. */}
+                    {isOwner && (
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        <Tooltip title="Move up">
+                          <Button
+                            size="small" type="text" icon={<UpOutlined />} disabled={folderIdx === 0}
+                            onClick={e => { e.stopPropagation(); handleReorderFolder(folder.id, -1); }}
+                          />
+                        </Tooltip>
+                        <Tooltip title="Move down">
+                          <Button
+                            size="small" type="text" icon={<DownOutlined />} disabled={folderIdx === folders.length - 1}
+                            onClick={e => { e.stopPropagation(); handleReorderFolder(folder.id, 1); }}
+                          />
+                        </Tooltip>
+                      </div>
                     )}
 
                     {/* Share button — owner only: dropdown with editor/viewer link */}
@@ -445,6 +512,12 @@ export function Dashboard() {
                         menu={{
                           items: [
                             {
+                              key: 'new-kanban',
+                              icon: <PlusOutlined />,
+                              label: 'New kanban in this folder',
+                            },
+                            { type: 'divider' as const },
+                            {
                               key: 'rename',
                               icon: <EditOutlined />,
                               label: 'Rename folder',
@@ -470,9 +543,11 @@ export function Dashboard() {
                           ],
                           onClick: ({ key, domEvent }) => {
                             domEvent.stopPropagation();
+                            if (key === 'new-kanban') { setCreateFolderId(folder.id); setCreateOpen(true); }
                             if (key === 'rename') {
                               setRenamingFolder(folder);
                               setRenamingFolderName(folder.name);
+                              setRenamingFolderAccolades(folder.accoladesEnabled ?? true);
                             }
                             if (key === 'upload-icon') {
                               pendingFolderIconUpload.current = folder.id;
@@ -511,6 +586,7 @@ export function Dashboard() {
                               isOwner={isKanbanOwner(k, user!.uid)}
                               onClick={() => navigate(`/k/${k.id}`)}
                               onManageAccess={() => setAccessKanban(k)}
+                              onClone={() => handleCloneKanban(k)}
                               editableFolders={editableFolders}
                               currentFolder={folder}
                               currentFolderRole={getFolderRole(folder)}
@@ -550,6 +626,7 @@ export function Dashboard() {
                       isOwner={isKanbanOwner(k, user!.uid)}
                       onClick={() => navigate(`/k/${k.id}`)}
                       onManageAccess={() => setAccessKanban(k)}
+                      onClone={() => handleCloneKanban(k)}
                       editableFolders={editableFolders}
                       currentFolder={undefined}
                       currentFolderRole={undefined}
@@ -584,7 +661,7 @@ export function Dashboard() {
         )}
       </div>
 
-      <CreateKanbanModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={onCreated} />
+      <CreateKanbanModal open={createOpen} onClose={() => { setCreateOpen(false); setCreateFolderId(null); }} onCreated={onCreated} />
 
       {accessKanban && (
         <AccessModal
@@ -654,6 +731,12 @@ export function Dashboard() {
           autoFocus
           style={{ marginTop: 8 }}
         />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
+          <Switch size="small" checked={renamingFolderAccolades} onChange={setRenamingFolderAccolades} />
+          <span style={{ fontSize: 13, color: '#555' }}>
+            Celebrate card moves (confetti) for kanbans in this folder by default
+          </span>
+        </div>
       </Modal>
 
       {/* Workspace drawer */}
@@ -750,6 +833,7 @@ interface KanbanCardProps {
   isOwner: boolean;
   onClick: () => void;
   onManageAccess: () => void;
+  onClone: () => void;
   editableFolders: Folder[];
   currentFolder?: Folder;
   currentFolderRole?: FolderRole;
@@ -759,7 +843,7 @@ interface KanbanCardProps {
 }
 
 function KanbanCard({
-  kanban, isOwner, onClick, onManageAccess,
+  kanban, isOwner, onClick, onManageAccess, onClone,
   editableFolders, currentFolder, currentFolderRole, onAddToFolder, onRemoveFromFolder, onCreateFolder,
 }: KanbanCardProps) {
   const accentColor = kanban.columns[0]?.color ?? '#1a1a2e';
@@ -829,6 +913,16 @@ function KanbanCard({
                 </Tooltip>
               </Dropdown>
             )}
+            <Tooltip title="Duplicate kanban">
+              <button
+                onClick={e => { e.stopPropagation(); onClone(); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#bbb', borderRadius: 4, lineHeight: 1, fontSize: 14 }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#555')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#bbb')}
+              >
+                <CopyOutlined />
+              </button>
+            </Tooltip>
             {isOwner && (
               <Tooltip title="Manage access">
                 <button

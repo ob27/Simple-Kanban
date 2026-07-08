@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Drawer, Button, Input, Form, InputNumber, Popconfirm, message, Select, Tooltip, Switch } from 'antd';
 const { TextArea } = Input;
-import { CopyOutlined, ReloadOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { CopyOutlined, ReloadOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, PrinterOutlined } from '@ant-design/icons';
 import type { Kanban } from '../types';
 import { regenerateInvite } from '../store';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { uploadKanbanLogo, deleteKanbanLogo } from '../utils/logoUpload';
+import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES, formatBytes } from '../constants';
 
 const MONTH_OPTIONS = [
   'January','February','March','April','May','June',
@@ -24,10 +25,12 @@ interface Props {
   onChange: (kanban: Kanban) => void;
   onDelete: () => void;
   onExportCSV: () => void;
+  onPrintReport: () => void;
   folderLogoUrl?: string | null;
+  accountAttachmentsBytes?: number;
 }
 
-export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV, folderLogoUrl }: Props) {
+export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV, onPrintReport, folderLogoUrl, accountAttachmentsBytes }: Props) {
   const [form] = Form.useForm();
   const [regenerating, setRegenerating] = useState(false);
   const [columnColors, setColumnColors] = useState<string[]>([]);
@@ -35,6 +38,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
   const [columnMaxCards, setColumnMaxCards] = useState<Array<number | undefined>>([]);
   const [kanbanLogoUrl, setKanbanLogoUrl] = useState<string | undefined>(undefined);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [staleAfterDaysValue, setStaleAfterDaysValue] = useState<number | undefined>(undefined);
   const logoFileRef = useRef<HTMLInputElement>(null);
   const { isMobile } = useBreakpoint();
 
@@ -44,6 +48,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       setColumnDescriptions(kanban.columns.map(c => c.description ?? ''));
       setColumnMaxCards(kanban.columns.map(c => c.maxCards));
       setKanbanLogoUrl(kanban.kanbanLogoUrl);
+      setStaleAfterDaysValue(kanban.staleAfterDays);
       form.setFieldsValue({
         name: kanban.name,
         totalEstimated: kanban.totalEstimated,
@@ -61,6 +66,8 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         showFolderLogo: kanban.showFolderLogo ?? false,
         wrapCardText: kanban.wrapCardText ?? false,
         cardFontSize: kanban.cardFontSize ?? 15,
+        showStoryPoints: kanban.showStoryPoints ?? false,
+        accoladesEnabled: kanban.accoladesEnabled ?? true,
         ...Object.fromEntries(kanban.columns.map((c, i) => [`col_${i}`, c.label])),
       });
     }
@@ -94,6 +101,9 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       wrapCardText: vals.wrapCardText as boolean,
       kanbanLogoUrl,
       cardFontSize: vals.cardFontSize as number,
+      showStoryPoints: vals.showStoryPoints as boolean,
+      accoladesEnabled: vals.accoladesEnabled as boolean,
+      staleAfterDays: staleAfterDaysValue,
       columns: updatedColumns,
     });
     onClose();
@@ -265,6 +275,41 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
             </Tooltip>
             <span style={{ fontSize: 13, color: folderLogoUrl ? '#555' : '#bbb' }}>Show folder icon</span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Form.Item name="showStoryPoints" valuePropName="checked" noStyle>
+              <Switch size="small" />
+            </Form.Item>
+            <span style={{ fontSize: 13, color: '#555' }}>Show story points</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Form.Item name="accoladesEnabled" valuePropName="checked" noStyle>
+              <Switch size="small" />
+            </Form.Item>
+            <span style={{ fontSize: 13, color: '#555' }}>Celebrate card moves (confetti)</span>
+          </div>
+        </div>
+
+        {/* Stale cards */}
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Card staleness</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Switch
+            size="small"
+            checked={staleAfterDaysValue !== undefined}
+            onChange={on => setStaleAfterDaysValue(on ? 7 : undefined)}
+          />
+          <span style={{ fontSize: 13, color: '#555' }}>Flag stale cards</span>
+          {staleAfterDaysValue !== undefined && (
+            <>
+              <span style={{ fontSize: 12, color: '#888' }}>after</span>
+              <InputNumber
+                min={1} max={365} size="small"
+                value={staleAfterDaysValue}
+                onChange={v => setStaleAfterDaysValue(v ?? 1)}
+                style={{ width: 64 }}
+              />
+              <span style={{ fontSize: 12, color: '#888' }}>days without moving</span>
+            </>
+          )}
         </div>
 
         {/* Kanban logo upload */}
@@ -389,9 +434,27 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         {/* Export */}
         <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 8 }}>Export</div>
-          <Button icon={<DownloadOutlined />} block onClick={onExportCSV}>
-            Export as CSV
-          </Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button icon={<DownloadOutlined />} block onClick={onExportCSV}>
+              Export as CSV
+            </Button>
+            <Button icon={<PrinterOutlined />} block onClick={onPrintReport}>
+              Print / PDF
+            </Button>
+          </div>
+        </div>
+
+        {/* Storage */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 4 }}>Attachment storage</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {formatBytes(kanban.attachmentsBytes ?? 0)} of {formatBytes(MAX_ATTACHMENTS_BYTES)} used on this board
+          </div>
+          {accountAttachmentsBytes !== undefined && (
+            <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+              {formatBytes(accountAttachmentsBytes)} of {formatBytes(MAX_USER_ATTACHMENTS_BYTES)} used across your account
+            </div>
+          )}
         </div>
 
         {/* Danger zone */}

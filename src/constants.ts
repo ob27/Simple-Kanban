@@ -10,12 +10,12 @@ export const DEFAULT_COLUMN_COLORS = [
 ];
 
 export const DEFAULT_COLUMN_LABELS = [
-  'FAB Target Date Confirmed',
-  'Pre-FAB Asset Register Preparation',
-  'Pre-FAB Asset Register Review',
-  'Post-FAB Asset Register Preparation',
-  'Post-FAB Asset Register Review',
-  'Completions Data Release',
+  'Backlog',
+  'Groomed',
+  'In Progress',
+  'Blocked',
+  "Won't Do",
+  'Done',
 ];
 
 export function buildDefaultColumns(): ColumnConfig[] {
@@ -27,6 +27,12 @@ export function buildDefaultColumns(): ColumnConfig[] {
 }
 
 export const REMAINING_COLOR = '#B8B4D8';
+export const MAX_ATTACHMENTS_BYTES = 250 * 1024 * 1024;
+export const MAX_USER_ATTACHMENTS_BYTES = 500 * 1024 * 1024;
+
+export function formatBytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
 export const DEFAULT_TOTAL_ESTIMATED = 300;
 export const DEFAULT_PROJECT_START_YEAR = 2022;
 export const DEFAULT_PROJECT_START_MONTH = 0;

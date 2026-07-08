@@ -16,9 +16,17 @@ interface Props {
   wrapCardText?: boolean;
   isViewer?: boolean;
   maxCards?: number;
+  showStoryPoints?: boolean;
+  staleAfterDays?: number;
+  selectMode?: boolean;
+  selectedCardIds?: Set<string>;
+  onToggleSelect?: (cardId: string) => void;
 }
 
-export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, wrapCardText, isViewer, maxCards }: Props) {
+export function KanbanColumn({
+  config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, wrapCardText, isViewer, maxCards,
+  showStoryPoints, staleAfterDays, selectMode, selectedCardIds, onToggleSelect,
+}: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: config.id });
   const visibleCards = maxCards ? cards.slice(0, maxCards) : cards;
   const hiddenCount = cards.length - visibleCards.length;
@@ -80,6 +88,11 @@ export function KanbanColumn({ config, cards, onDeleteCard, onOpenNotes, minWidt
               cardFontSize={cardFontSize}
               wrapCardText={wrapCardText}
               isViewer={isViewer}
+              showStoryPoints={showStoryPoints}
+              staleAfterDays={staleAfterDays}
+              selectMode={selectMode}
+              selected={selectedCardIds?.has(card.id)}
+              onToggleSelect={onToggleSelect ? () => onToggleSelect(card.id) : undefined}
             />
           ))}
         </SortableContext>

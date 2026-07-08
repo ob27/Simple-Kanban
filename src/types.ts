@@ -14,6 +14,15 @@ export interface CardComment {
   createdAt: number;
 }
 
+export interface CardAttachment {
+  id: string;
+  name: string;
+  url: string;
+  path: string;
+  size: number;
+  type: string;
+}
+
 export interface KanbanCard {
   id: string;
   title: string;
@@ -22,6 +31,9 @@ export interface KanbanCard {
   order: number;
   notes?: string;
   comments?: CardComment[];
+  storyPoints?: number;
+  movedAt?: number;
+  attachments?: CardAttachment[];
 }
 
 export type FolderRole = 'owner' | 'editor' | 'viewer';
@@ -39,6 +51,8 @@ export interface Folder {
   editorInviteToken?: string;
   createdAt: number;
   folderLogoUrl?: string | null;
+  order?: number;
+  accoladesEnabled?: boolean;
 }
 
 export interface Kanban {
@@ -71,4 +85,8 @@ export interface Kanban {
   projectEndMonth: number;
   cards: KanbanCard[];
   createdAt: number;
+  showStoryPoints?: boolean;
+  staleAfterDays?: number;
+  accoladesEnabled?: boolean;
+  attachmentsBytes?: number;
 }

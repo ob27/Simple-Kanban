@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Spin, Button } from 'antd';
 import { PrinterOutlined } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
@@ -87,6 +88,8 @@ function KanbanSection({ kanban }: { kanban: Kanban }) {
 
 export function WorkspaceReport() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const kanbanId = searchParams.get('kanbanId');
   const [kanbans, setKanbans] = useState<Kanban[]>([]);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,11 +100,14 @@ export function WorkspaceReport() {
       loadUserKanbans(user.uid),
       getWorkspaceSettings(user.uid),
     ]).then(([ks, ws]) => {
-      setKanbans(ks.filter(k => k.ownerId === user.uid));
+      // Single-kanban mode (linked from a board's own Settings): any kanban
+      // the user can access, not just ones they own — a member printing a
+      // shared board's report shouldn't hit an empty page.
+      setKanbans(kanbanId ? ks.filter(k => k.id === kanbanId) : ks.filter(k => k.ownerId === user.uid));
       setLogoUrl(ws.boardLogoUrl);
       setLoading(false);
     });
-  }, [user]);
+  }, [user, kanbanId]);
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -153,7 +159,7 @@ export function WorkspaceReport() {
             )}
             <div>
               <div style={{ fontSize: 26, fontWeight: 900, color: '#1a1a2e', letterSpacing: '-0.5px' }}>
-                Workspace Report
+                {kanbanId ? (kanbans[0]?.name ?? 'Kanban Report') : 'Workspace Report'}
               </div>
               <div style={{ fontSize: 13, color: '#888', marginTop: 2 }}>{user?.email}</div>
             </div>
@@ -170,7 +176,9 @@ export function WorkspaceReport() {
 
         {/* Kanbans */}
         {kanbans.length === 0 ? (
-          <div style={{ color: '#aaa', fontSize: 14 }}>No kanbans found.</div>
+          <div style={{ color: '#aaa', fontSize: 14 }}>
+            {kanbanId ? "Kanban not found or you don't have access." : 'No kanbans found.'}
+          </div>
         ) : (
           kanbans.map(k => <KanbanSection key={k.id} kanban={k} />)
         )}

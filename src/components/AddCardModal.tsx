@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Modal, Form, Input, Select, Button, Divider, notification } from 'antd';
+import { Modal, Form, Input, Select, Button, Divider, notification, InputNumber } from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { KanbanCard, ColumnConfig } from '../types';
 import { parseCSV } from '../utils/csvImport';
@@ -9,18 +9,24 @@ interface Props {
   columns: ColumnConfig[];
   onAdd: (card: Omit<KanbanCard, 'id' | 'order'>) => void;
   onImport: (cards: KanbanCard[]) => void;
+  showStoryPoints?: boolean;
 }
 
-export function AddCardModal({ columns, onAdd, onImport }: Props) {
+export function AddCardModal({ columns, onAdd, onImport, showStoryPoints }: Props) {
   const [open, setOpen] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [form] = Form.useForm<{ title: string; columnId: string; pillValue: string }>();
+  const [form] = Form.useForm<{ title: string; columnId: string; pillValue: string; storyPoints?: number }>();
   const fileRef = useRef<HTMLInputElement>(null);
   const { isMobile } = useBreakpoint();
 
   function handleSubmit() {
     form.validateFields().then(values => {
-      onAdd({ title: values.title.trim(), columnId: values.columnId, pillValue: values.pillValue?.trim() ?? '' });
+      onAdd({
+        title: values.title.trim(),
+        columnId: values.columnId,
+        pillValue: values.pillValue?.trim() ?? '',
+        storyPoints: values.storyPoints,
+      });
       form.resetFields();
       setOpen(false);
     });
@@ -85,6 +91,11 @@ export function AddCardModal({ columns, onAdd, onImport }: Props) {
           <Form.Item label="Pill value" name="pillValue">
             <Input size="large" placeholder="e.g. 14 Jul, High priority (optional)" />
           </Form.Item>
+          {showStoryPoints && (
+            <Form.Item label="Story points" name="storyPoints">
+              <InputNumber size="large" min={0} style={{ width: '100%' }} placeholder="Optional" />
+            </Form.Item>
+          )}
         </Form>
 
         <Divider plain style={{ color: '#aaa', fontSize: 12 }}>or import from CSV</Divider>

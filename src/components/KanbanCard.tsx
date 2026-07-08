@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { Tooltip } from 'antd';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { HolderOutlined, CloseOutlined } from '@ant-design/icons';
+import { HolderOutlined, CloseOutlined, CheckOutlined } from '@ant-design/icons';
 import type { KanbanCard as KanbanCardType } from '../types';
 
 interface Props {
@@ -16,13 +16,21 @@ interface Props {
   wrapCardText?: boolean;
   isOverlay?: boolean;
   isViewer?: boolean;
+  showStoryPoints?: boolean;
+  staleAfterDays?: number;
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 const LONG_PRESS_DELAY = 380;
 const DOUBLE_TAP_MS = 300;
 
-export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontSize, wrapCardText = false, isOverlay = false, isViewer = false }: Props) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
+export function KanbanCard({
+  card, columnColor, onDelete, onOpenNotes, cardFontSize, wrapCardText = false, isOverlay = false, isViewer = false,
+  showStoryPoints = false, staleAfterDays, selectMode = false, selected = false, onToggleSelect,
+}: Props) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id, disabled: selectMode });
 
   const [hovered, setHovered] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -42,9 +50,13 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
     nodeRef.current = node;
   }, [setNodeRef]);
 
+  const daysSinceMoved = card.movedAt ? (Date.now() - card.movedAt) / 86400000 : 0;
+  const isStale = !!staleAfterDays && daysSinceMoved >= staleAfterDays;
+  const isVeryStale = !!staleAfterDays && daysSinceMoved >= staleAfterDays * 2;
+
   useEffect(() => {
     const el = nodeRef.current;
-    if (!el || isOverlay) return;
+    if (!el || isOverlay || selectMode) return;
 
     function onDown() {
       longPressTimer.current = setTimeout(() => setPreviewOpen(true), LONG_PRESS_DELAY);
@@ -79,7 +91,7 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
       el.removeEventListener('pointercancel', onLeave);
       if (longPressTimer.current) clearTimeout(longPressTimer.current);
     };
-  }, [isOverlay, onOpenNotes]);
+  }, [isOverlay, onOpenNotes, selectMode]);
 
   const transformStr = isOverlay
     ? `${CSS.Transform.toString(transform)} scale(1.04)`
@@ -102,14 +114,16 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
-    cursor: isOverlay ? 'grabbing' : isViewer ? 'default' : 'grab',
+    cursor: isOverlay ? 'grabbing' : selectMode ? 'pointer' : isViewer ? 'default' : 'grab',
     userSelect: 'none',
     touchAction: 'none',
     boxShadow: isOverlay
       ? '0 10px 28px rgba(0,0,0,0.28)'
-      : hovered && !isDragging
-        ? '0 5px 16px rgba(0,0,0,0.22)'
-        : '0 1px 3px rgba(0,0,0,0.14)',
+      : selected
+        ? '0 0 0 3px rgba(255,255,255,0.9), 0 5px 16px rgba(0,0,0,0.22)'
+        : hovered && !isDragging
+          ? '0 5px 16px rgba(0,0,0,0.22)'
+          : '0 1px 3px rgba(0,0,0,0.14)',
     opacity: isDragging ? 0.3 : 1,
   };
 
@@ -122,13 +136,53 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
         {...listeners}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        onClick={e => { if (selectMode) { e.stopPropagation(); onToggleSelect?.(); } }}
       >
-        <HolderOutlined style={{
-          position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-          opacity: hovered && !isDragging ? 0.65 : 0.3,
-          fontSize: 'clamp(12px, 1.1vw, 15px)', color: '#fff',
-          pointerEvents: 'none', transition: 'opacity 0.15s ease',
-        }} />
+        {!selectMode && (
+          <HolderOutlined style={{
+            position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
+            opacity: hovered && !isDragging ? 0.65 : 0.3,
+            fontSize: 'clamp(12px, 1.1vw, 15px)', color: '#fff',
+            pointerEvents: 'none', transition: 'opacity 0.15s ease',
+          }} />
+        )}
+
+        {selectMode && !isOverlay && (
+          <div
+            style={{
+              position: 'absolute', top: 6, left: 7, width: 20, height: 20, borderRadius: 5,
+              border: '2px solid rgba(255,255,255,0.85)', background: selected ? '#fff' : 'rgba(0,0,0,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+            }}
+          >
+            {selected && <CheckOutlined style={{ fontSize: 11, color: columnColor }} />}
+          </div>
+        )}
+
+        {showStoryPoints && card.storyPoints != null && !isOverlay && (
+          <div style={{
+            position: 'absolute', top: 6, right: 33, minWidth: 20, height: 20, padding: '0 5px',
+            borderRadius: 10, background: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 700, color: '#fff', pointerEvents: 'none',
+          }}>
+            {card.storyPoints}
+          </div>
+        )}
+
+        {!isOverlay && isStale && (
+          <div style={{ position: 'absolute', top: -6, right: 8, pointerEvents: 'none' }}>
+            {isVeryStale ? (
+              <span style={{ fontSize: 16, display: 'inline-block', animation: 'kc-flame 0.6s ease-in-out infinite', filter: 'drop-shadow(0 0 4px rgba(255,120,0,0.8))' }}>
+                🔥
+              </span>
+            ) : (
+              <span style={{ fontSize: 14, display: 'inline-block', opacity: 0.5, animation: 'kc-smoke 2.4s ease-in infinite' }}>
+                💨
+              </span>
+            )}
+          </div>
+        )}
 
         <span style={{
           overflow: 'hidden',
@@ -162,7 +216,7 @@ export function KanbanCard({ card, columnColor, onDelete, onOpenNotes, cardFontS
           </Tooltip>
         )}
 
-        {!isOverlay && !isViewer && (
+        {!isOverlay && !isViewer && !selectMode && (
           <div
             onPointerDown={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
             onClick={e => { e.stopPropagation(); onDelete(card.id); }}

@@ -3,7 +3,7 @@ import {
   query, where, getDocs, arrayUnion, arrayRemove, updateDoc, onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { Kanban, Folder, FolderRole } from './types';
+import type { Kanban, KanbanCard, Folder, FolderRole } from './types';
 import {
   buildDefaultColumns,
   DEFAULT_TOTAL_ESTIMATED,
@@ -93,7 +93,7 @@ export async function createKanban(uid: string, name: string, email?: string): P
     totalEstimated: DEFAULT_TOTAL_ESTIMATED,
     totalFromBacklog: false,
     backlogColumnId: cols[0].id,
-    groomedColumnId: cols[2].id,
+    groomedColumnId: cols[1].id,
     doneColumnId: cols[5].id,
     showProgressBar: true,
     showLifeline: true,
@@ -117,6 +117,63 @@ export async function createKanban(uid: string, name: string, email?: string): P
 
 export async function saveKanban(kanban: Kanban): Promise<void> {
   await setDoc(doc(db, 'kanbans', kanban.id), kanban);
+}
+
+export async function cloneKanban(kanban: Kanban, uid: string, email?: string): Promise<Kanban> {
+  const id = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+  const cloned: Kanban = {
+    ...kanban,
+    id,
+    name: `${kanban.name} (copy)`,
+    ownerId: uid,
+    ownerEmail: email ?? '',
+    coOwnerIds: [],
+    viewerIds: [],
+    memberIds: [],
+    memberEmails: {},
+    inviteToken,
+    createdAt: Date.now(),
+  };
+  await Promise.all([
+    setDoc(doc(db, 'kanbans', id), cloned),
+    setDoc(doc(db, 'kanbanInvites', inviteToken), {
+      kanbanId: id,
+      kanbanName: cloned.name,
+      ownerId: uid,
+    }),
+  ]);
+  return cloned;
+}
+
+// Moves or copies a single card into another kanban the user has write access
+// to. Placed in the target's backlog column since the source column config
+// (id, label, color) has no counterpart there.
+export async function moveCardToKanban(
+  sourceKanban: Kanban,
+  targetKanbanId: string,
+  card: KanbanCard,
+  mode: 'move' | 'copy',
+): Promise<void> {
+  const targetSnap = await getDoc(doc(db, 'kanbans', targetKanbanId));
+  if (!targetSnap.exists()) throw new Error('Target kanban not found');
+  const target = { id: targetSnap.id, ...targetSnap.data() } as Kanban;
+  const targetColumnId = target.backlogColumnId ?? target.columns[0]?.id;
+  if (!targetColumnId) throw new Error('Target kanban has no columns');
+  const maxOrder = target.cards.reduce((m, c) => c.columnId === targetColumnId ? Math.max(m, c.order) : m, -1);
+  const movedCard: KanbanCard = {
+    ...card,
+    id: mode === 'copy' ? crypto.randomUUID() : card.id,
+    columnId: targetColumnId,
+    order: maxOrder + 1,
+  };
+  await setDoc(doc(db, 'kanbans', target.id), { ...target, cards: [...target.cards, movedCard] });
+  if (mode === 'move') {
+    await setDoc(doc(db, 'kanbans', sourceKanban.id), {
+      ...sourceKanban,
+      cards: sourceKanban.cards.filter(c => c.id !== card.id),
+    });
+  }
 }
 
 export async function deleteKanban(kanban: Kanban): Promise<void> {
@@ -220,7 +277,7 @@ export async function createFolder(uid: string, name: string, email?: string): P
   const folder: Folder = {
     id, name, ownerId: uid, ownerEmail: email ?? '',
     memberIds: [], editorIds: [], memberEmails: {}, kanbanIds: [],
-    inviteToken, editorInviteToken, createdAt: Date.now(),
+    inviteToken, editorInviteToken, createdAt: Date.now(), order: Date.now(),
   };
   await Promise.all([
     setDoc(doc(db, 'folders', id), folder),
@@ -243,6 +300,14 @@ export async function deleteFolder(folder: Folder): Promise<void> {
     ops.push(deleteDoc(doc(db, 'folderInvites', folder.editorInviteToken)));
   }
   await Promise.all(ops);
+}
+
+export async function reorderFolder(folderId: string, newOrder: number): Promise<void> {
+  await updateDoc(doc(db, 'folders', folderId), { order: newOrder });
+}
+
+export async function setFolderAccolades(folderId: string, enabled: boolean): Promise<void> {
+  await updateDoc(doc(db, 'folders', folderId), { accoladesEnabled: enabled });
 }
 
 export async function renameFolder(folder: Folder, name: string): Promise<void> {
@@ -310,7 +375,7 @@ export function subscribeUserFolders(
     for (const slice of Object.values(slices)) {
       for (const [id, f] of slice) merged.set(id, f);
     }
-    onChange(Array.from(merged.values()).sort((a, b) => a.createdAt - b.createdAt));
+    onChange(Array.from(merged.values()).sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)));
   }
 
   const makeUnsub = (sliceKey: string, q: ReturnType<typeof query>) =>

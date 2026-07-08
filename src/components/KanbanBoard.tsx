@@ -8,7 +8,7 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
-import type { KanbanCard, ColumnConfig, CardComment } from '../types';
+import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment } from '../types';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard as KanbanCardComponent } from './KanbanCard';
 import { CardNotesModal } from './CardNotesModal';
@@ -24,6 +24,17 @@ interface Props {
   wrapCardText?: boolean;
   isOwner?: boolean;
   isViewer?: boolean;
+  showStoryPoints?: boolean;
+  staleAfterDays?: number;
+  accoladesEnabled?: boolean;
+  selectMode?: boolean;
+  selectedCardIds?: Set<string>;
+  onToggleSelect?: (cardId: string) => void;
+  onSplitCard?: (cardId: string, titles: string[]) => void;
+  otherKanbans?: Kanban[];
+  onMoveOrCopyCard?: (card: KanbanCard, targetKanbanId: string, mode: 'move' | 'copy') => void;
+  onUploadAttachment?: (cardId: string, file: File) => void;
+  onDeleteAttachment?: (cardId: string, attachment: CardAttachment) => void;
 }
 
 function burstConfetti(colors: string[]) {
@@ -44,7 +55,11 @@ function launchFireworks() {
   explode(0.3, 0.3, 1500, 70); explode(0.7, 0.3, 1560, 70);
 }
 
-export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer }: Props) {
+export function KanbanBoard({
+  cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer,
+  showStoryPoints, staleAfterDays, accoladesEnabled = true, selectMode, selectedCardIds, onToggleSelect,
+  onSplitCard, otherKanbans, onMoveOrCopyCard, onUploadAttachment, onDeleteAttachment,
+}: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
   const { isMobile, isTablet } = useBreakpoint();
@@ -95,7 +110,7 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
       const targetIdx = columnIds.indexOf(targetColumnId);
       const movingRight = targetIdx > sourceIdx;
 
-      const moved: KanbanCard = { ...dragged, columnId: targetColumnId };
+      const moved: KanbanCard = { ...dragged, columnId: targetColumnId, movedAt: Date.now() };
       const without = cards.filter(c => c.id !== activeId);
       let newCards: KanbanCard[];
       if (isOverColumn) {
@@ -107,7 +122,7 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
       }
       onCardsChange(newCards);
 
-      if (movingRight) {
+      if (movingRight && accoladesEnabled) {
         message.success({ content: getRandomAffirmation(), duration: 3, style: { fontSize: 'clamp(14px, 1.4vw, 19px)', fontWeight: 600 } });
         if (targetColumnId === lastColumnId) {
           launchFireworks();
@@ -118,8 +133,14 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
     }
   }
 
-  function handleSaveCard(cardId: string, updates: { title?: string; pillValue?: string; notes?: string }) {
-    onCardsChange(cards.map(c => c.id === cardId ? { ...c, ...updates } : c));
+  function handleSaveCard(cardId: string, updates: { title?: string; pillValue?: string; notes?: string; storyPoints?: number | null }) {
+    onCardsChange(cards.map(c => {
+      if (c.id !== cardId) return c;
+      const { storyPoints, ...rest } = updates;
+      const next: KanbanCard = { ...c, ...rest };
+      if (storyPoints !== undefined) next.storyPoints = storyPoints === null ? undefined : storyPoints;
+      return next;
+    }));
   }
 
   function handleAddComment(cardId: string, text: string) {
@@ -174,6 +195,11 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
               wrapCardText={wrapCardText}
               isViewer={isViewer}
               maxCards={col.maxCards}
+              showStoryPoints={showStoryPoints}
+              staleAfterDays={staleAfterDays}
+              selectMode={selectMode}
+              selectedCardIds={selectedCardIds}
+              onToggleSelect={onToggleSelect}
             />
           ))}
         </div>
@@ -200,10 +226,16 @@ export function KanbanBoard({ cards, columns, onCardsChange, onDeleteCard, cardF
           onClose={() => setNotesCardId(null)}
           canDeleteAnyComment={!!isOwner}
           readOnly={!!isViewer}
+          showStoryPoints={showStoryPoints}
           onSaveCard={handleSaveCard}
           onAddComment={handleAddComment}
           onEditComment={handleEditComment}
           onDeleteComment={handleDeleteComment}
+          onSplitCard={onSplitCard ? titles => { onSplitCard(notesCard.id, titles); setNotesCardId(null); } : undefined}
+          otherKanbans={otherKanbans}
+          onMoveOrCopy={onMoveOrCopyCard ? (targetId, mode) => { onMoveOrCopyCard(notesCard, targetId, mode); setNotesCardId(null); } : undefined}
+          onUploadAttachment={onUploadAttachment ? file => onUploadAttachment(notesCard.id, file) : undefined}
+          onDeleteAttachment={onDeleteAttachment ? attachment => onDeleteAttachment(notesCard.id, attachment) : undefined}
         />
       )}
     </>
