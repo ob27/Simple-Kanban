@@ -8,17 +8,19 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
-import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment } from '../types';
+import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue } from '../types';
+import type { KanbanMember } from '../utils/kanbanMembers';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard as KanbanCardComponent } from './KanbanCard';
 import { CardNotesModal } from './CardNotesModal';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useAuth } from '../AuthContext';
+import { deleteCommentImageFile } from '../utils/cardAttachments';
 
 interface Props {
   cards: KanbanCard[];
   columns: ColumnConfig[];
-  onCardsChange: (cards: KanbanCard[]) => void;
+  onCardsChange: (cards: KanbanCard[], attachmentsBytesDelta?: number) => void;
   onDeleteCard: (cardId: string) => void;
   cardFontSize?: number;
   wrapCardText?: boolean;
@@ -35,6 +37,10 @@ interface Props {
   onMoveOrCopyCard?: (card: KanbanCard, targetKanbanId: string, mode: 'move' | 'copy') => void;
   onUploadAttachment?: (cardId: string, file: File) => void;
   onDeleteAttachment?: (cardId: string, attachment: CardAttachment) => void;
+  onUploadCommentImage?: (cardId: string, file: File) => Promise<{ url: string; path: string; size: number } | null>;
+  assignmentDefinitions?: AssignmentDefinition[];
+  showAssignmentsOnCard?: boolean;
+  members?: KanbanMember[];
 }
 
 function burstConfetti(colors: string[]) {
@@ -58,12 +64,14 @@ function launchFireworks() {
 export function KanbanBoard({
   cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer,
   showStoryPoints, staleAfterDays, accoladesEnabled = true, selectMode, selectedCardIds, onToggleSelect,
-  onSplitCard, otherKanbans, onMoveOrCopyCard, onUploadAttachment, onDeleteAttachment,
+  onSplitCard, otherKanbans, onMoveOrCopyCard, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
+  assignmentDefinitions, showAssignmentsOnCard, members,
 }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
   const { isMobile, isTablet } = useBreakpoint();
   const { user } = useAuth();
+  const memberEmailByUid = Object.fromEntries((members ?? []).map(m => [m.uid, m.email]));
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: isViewer ? 999999 : 8 } }),
@@ -143,7 +151,7 @@ export function KanbanBoard({
     }));
   }
 
-  function handleAddComment(cardId: string, text: string) {
+  function handleAddComment(cardId: string, text: string, image?: { url: string; path: string; size: number }) {
     const email = user?.email ?? 'unknown';
     const uid = user?.uid ?? 'unknown';
     const comment: CardComment = {
@@ -152,12 +160,35 @@ export function KanbanBoard({
       email,
       text,
       createdAt: Date.now(),
+      imageUrl: image?.url,
+      imagePath: image?.path,
+      imageSize: image?.size,
     };
     onCardsChange(cards.map(c =>
       c.id === cardId
         ? { ...c, comments: [...(c.comments ?? []), comment] }
         : c
-    ));
+    ), image?.size ?? 0);
+  }
+
+  function handleToggleReaction(cardId: string, commentId: string, emoji: string) {
+    const uid = user?.uid ?? 'unknown';
+    onCardsChange(cards.map(c => {
+      if (c.id !== cardId) return c;
+      return {
+        ...c,
+        comments: (c.comments ?? []).map(cm => {
+          if (cm.id !== commentId) return cm;
+          const current = cm.reactions?.[emoji] ?? [];
+          const has = current.includes(uid);
+          const nextUsers = has ? current.filter(u => u !== uid) : [...current, uid];
+          const nextReactions = { ...(cm.reactions ?? {}) };
+          if (nextUsers.length > 0) nextReactions[emoji] = nextUsers;
+          else delete nextReactions[emoji];
+          return { ...cm, reactions: Object.keys(nextReactions).length ? nextReactions : undefined };
+        }),
+      };
+    }));
   }
 
   function handleEditComment(cardId: string, commentId: string, text: string) {
@@ -169,11 +200,25 @@ export function KanbanBoard({
   }
 
   function handleDeleteComment(cardId: string, commentId: string) {
+    const card = cards.find(c => c.id === cardId);
+    const comment = card?.comments?.find(cm => cm.id === commentId);
+    if (comment?.imagePath) {
+      deleteCommentImageFile(comment.imagePath);
+    }
     onCardsChange(cards.map(c =>
       c.id === cardId
         ? { ...c, comments: (c.comments ?? []).filter(cm => cm.id !== commentId) }
         : c
-    ));
+    ), comment?.imageSize ? -comment.imageSize : 0);
+  }
+
+  function handleSaveCardAssignment(cardId: string, definitionId: string, value: CardAssignmentValue | null) {
+    onCardsChange(cards.map(c => {
+      if (c.id !== cardId) return c;
+      const next = { ...(c.cardAssignments ?? {}) };
+      if (value) next[definitionId] = value; else delete next[definitionId];
+      return { ...c, cardAssignments: Object.keys(next).length ? next : undefined };
+    }));
   }
 
   const notesCard = notesCardId ? cards.find(c => c.id === notesCardId) : null;
@@ -182,7 +227,7 @@ export function KanbanBoard({
   return (
     <>
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div style={{ display: 'flex', gap: 12, flex: 1, overflow: 'auto', height: '100%' }}>
+        <div className="scrollbar-hidden" style={{ display: 'flex', gap: 12, flex: 1, overflow: 'auto', height: '100%' }}>
           {columns.map(col => (
             <KanbanColumn
               key={col.id}
@@ -200,6 +245,9 @@ export function KanbanBoard({
               selectMode={selectMode}
               selectedCardIds={selectedCardIds}
               onToggleSelect={onToggleSelect}
+              assignmentDefinitions={assignmentDefinitions}
+              showAssignmentsOnCard={showAssignmentsOnCard}
+              memberEmailByUid={memberEmailByUid}
             />
           ))}
         </div>
@@ -236,6 +284,11 @@ export function KanbanBoard({
           onMoveOrCopy={onMoveOrCopyCard ? (targetId, mode) => { onMoveOrCopyCard(notesCard, targetId, mode); setNotesCardId(null); } : undefined}
           onUploadAttachment={onUploadAttachment ? file => onUploadAttachment(notesCard.id, file) : undefined}
           onDeleteAttachment={onDeleteAttachment ? attachment => onDeleteAttachment(notesCard.id, attachment) : undefined}
+          onUploadCommentImage={onUploadCommentImage ? file => onUploadCommentImage(notesCard.id, file) : undefined}
+          onToggleReaction={(commentId, emoji) => handleToggleReaction(notesCard.id, commentId, emoji)}
+          assignmentDefinitions={assignmentDefinitions}
+          members={members}
+          onSaveCardAssignment={handleSaveCardAssignment}
         />
       )}
     </>

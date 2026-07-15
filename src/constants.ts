@@ -33,6 +33,7 @@ export const MAX_USER_ATTACHMENTS_BYTES = 500 * 1024 * 1024;
 export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
+export const MAX_ASSIGNMENT_DEFINITIONS = 5;
 export const DEFAULT_TOTAL_ESTIMATED = 300;
 export const DEFAULT_PROJECT_START_YEAR = 2022;
 export const DEFAULT_PROJECT_START_MONTH = 0;

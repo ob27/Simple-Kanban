@@ -5,13 +5,14 @@ import { PrinterOutlined } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
 import { loadUserKanbans } from '../store';
 import { getWorkspaceSettings } from '../utils/logoUpload';
+import { useUserProfiles, resolveDisplay, type UserProfile } from '../utils/userProfiles';
 import type { Kanban, KanbanCard } from '../types';
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function CardRow({ card, color }: { card: KanbanCard; color: string }) {
+function CardRow({ card, color, profiles }: { card: KanbanCard; color: string; profiles: Record<string, UserProfile> }) {
   const comments = card.comments ?? [];
   return (
     <div style={{ marginBottom: 12, paddingLeft: 12, borderLeft: `3px solid ${color}` }}>
@@ -30,7 +31,7 @@ function CardRow({ card, color }: { card: KanbanCard; color: string }) {
         <div style={{ marginTop: 6 }}>
           {comments.map(c => (
             <div key={c.id} style={{ fontSize: 11, color: '#777', marginBottom: 2 }}>
-              <span style={{ fontWeight: 600 }}>{c.email}</span>
+              <span style={{ fontWeight: 600 }}>{resolveDisplay(c.uid, c.email, profiles).name}</span>
               {' · '}
               <span style={{ color: '#aaa' }}>{formatDate(c.createdAt)}</span>
               {': '}
@@ -43,7 +44,7 @@ function CardRow({ card, color }: { card: KanbanCard; color: string }) {
   );
 }
 
-function KanbanSection({ kanban }: { kanban: Kanban }) {
+function KanbanSection({ kanban, profiles }: { kanban: Kanban; profiles: Record<string, UserProfile> }) {
   return (
     <div className="kanban-section">
       <div style={{
@@ -77,7 +78,7 @@ function KanbanSection({ kanban }: { kanban: Kanban }) {
               <span style={{ fontSize: 11, color: '#bbb' }}>({cards.length})</span>
             </div>
             {cards.map(card => (
-              <CardRow key={card.id} card={card} color={col.color} />
+              <CardRow key={card.id} card={card} color={col.color} profiles={profiles} />
             ))}
           </div>
         );
@@ -108,6 +109,8 @@ export function WorkspaceReport() {
       setLoading(false);
     });
   }, [user, kanbanId]);
+
+  const commentProfiles = useUserProfiles(kanbans.flatMap(k => k.cards.flatMap(c => (c.comments ?? []).map(cm => cm.uid))));
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -180,7 +183,7 @@ export function WorkspaceReport() {
             {kanbanId ? "Kanban not found or you don't have access." : 'No kanbans found.'}
           </div>
         ) : (
-          kanbans.map(k => <KanbanSection key={k.id} kanban={k} />)
+          kanbans.map(k => <KanbanSection key={k.id} kanban={k} profiles={commentProfiles} />)
         )}
       </div>
     </>

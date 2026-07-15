@@ -93,7 +93,7 @@ export function AddCardModal({ columns, onAdd, onImport, showStoryPoints }: Prop
           </Form.Item>
           {showStoryPoints && (
             <Form.Item label="Story points" name="storyPoints">
-              <InputNumber size="large" min={0} style={{ width: '100%' }} placeholder="Optional" />
+              <InputNumber size="large" min={0} max={9} style={{ width: '100%' }} placeholder="Optional" />
             </Form.Item>
           )}
         </Form>

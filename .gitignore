@@ -17,3 +17,8 @@ Thumbs.db
 # Vite cache
 .vite/
 vite.config.ts.timestamp*
+
+# Stray tsc build artifacts
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

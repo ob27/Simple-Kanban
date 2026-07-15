@@ -7,11 +7,12 @@ import {
   PlusOutlined, LogoutOutlined, TeamOutlined, SettingOutlined,
   DownloadOutlined, FileTextOutlined, UploadOutlined, DeleteOutlined,
   FolderOutlined, FolderOpenOutlined, RightOutlined, DownOutlined, UpOutlined,
-  ShareAltOutlined, EditOutlined, MoreOutlined, FolderAddOutlined, PictureOutlined, CopyOutlined,
+  ShareAltOutlined, EditOutlined, MoreOutlined, FolderAddOutlined, PictureOutlined,
+  ArrowLeftOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../AuthContext';
 import {
-  subscribeUserKanbans, isKanbanOwner, cloneKanban,
+  subscribeUserKanbans, isKanbanOwner,
   subscribeUserFolders, createFolder, deleteFolder, renameFolder, reorderFolder,
   addKanbanToFolder, removeKanbanFromFolder, generateEditorInvite, setFolderAccolades,
 } from '../store';
@@ -23,7 +24,8 @@ import { FolderMembersModal } from '../components/FolderMembersModal';
 import { UserAvatar } from '../components/UserAvatar';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { exportAllKanbansCSV } from '../utils/csvExportAll';
-import { getWorkspaceSettings, uploadLogo, deleteLogo, saveNavBgColor, type WorkspaceSettings } from '../utils/logoUpload';
+import { getWorkspaceSettings, uploadLogo, deleteLogo, saveNavBgColor, saveWorkspaceAccolades, type WorkspaceSettings } from '../utils/logoUpload';
+import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
 
 const DEFAULT_SETTINGS: WorkspaceSettings = { navLogoUrl: null, boardLogoUrl: null, navBgColor: '#1a1a2e' };
 
@@ -61,6 +63,7 @@ function LogoSlot({ label, hint, url, fileRef, busy, previewBg, onUpload, onDele
 
 export function Dashboard() {
   const { user, signOut } = useAuth();
+  const ownProfile = useUserProfiles(user ? [user.uid] : []);
   const navigate = useNavigate();
   const { isMobile, isTablet } = useBreakpoint();
   const [kanbans, setKanbans] = useState<Kanban[]>([]);
@@ -117,16 +120,6 @@ export function Dashboard() {
     return unsub;
   }, [user]);
 
-  async function handleCloneKanban(kanban: Kanban) {
-    if (!user) return;
-    try {
-      await cloneKanban(kanban, user.uid, user.email ?? undefined);
-      message.success(`Duplicated "${kanban.name}"`);
-    } catch {
-      message.error('Failed to duplicate kanban');
-    }
-  }
-
   function onCreated(kanban: Kanban) {
     setCreateOpen(false);
     if (createFolderId) {
@@ -170,6 +163,11 @@ export function Dashboard() {
   async function handleColorChange(color: string) {
     setSettings(s => ({ ...s, navBgColor: color }));
     if (user) await saveNavBgColor(user.uid, color);
+  }
+
+  async function handleWorkspaceAccoladesChange(enabled: boolean) {
+    setSettings(s => ({ ...s, accoladesEnabled: enabled }));
+    if (user) await saveWorkspaceAccolades(user.uid, enabled);
   }
 
   // ── Folder handlers ──────────────────────────────────────────────────────────
@@ -328,7 +326,6 @@ export function Dashboard() {
   const rgb = hexToRgb(navBg.startsWith('#') && navBg.length === 7 ? navBg : '#1a1a2e');
   const textColor = navTextColor(rgb.r, rgb.g, rgb.b);
   const subtleTextColor = textColor === '#ffffff' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
-  const iconColor = textColor === '#ffffff' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
 
   const gridStyle = {
     display: 'grid',
@@ -350,26 +347,41 @@ export function Dashboard() {
         transition: 'background 0.2s',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a href="/" style={{ color: subtleTextColor, fontSize: 12, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            &larr; All products
-          </a>
           {settings.navLogoUrl
             ? <img src={settings.navLogoUrl} alt="logo" style={{ height: 34, width: 'auto', objectFit: 'contain' }} />
-            : <span style={{ color: textColor, fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>
-                Simple Kanban <span style={{ fontWeight: 400, color: subtleTextColor, fontSize: 15 }}>by Oestler</span>
+            : <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: textColor, fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>
+                <img src={textColor === '#ffffff' ? '/favicon-white.svg' : '/favicon-black.svg'} alt="" style={{ height: 16, width: 'auto' }} />
+                Simple Kanban
               </span>
           }
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {!isMobile && <span style={{ color: subtleTextColor, fontSize: 13 }}>{user?.email}</span>}
-          {user?.email && <UserAvatar email={user.email} size={28} />}
-          <Tooltip title="Workspace settings">
-            <Button icon={<SettingOutlined />} size="small" type="text"
-              onClick={() => { setWorkspaceOpen(true); if (user) getWorkspaceSettings(user.uid).then(setSettings); }}
-              style={{ color: iconColor }}
-            />
-          </Tooltip>
-          <Button icon={<LogoutOutlined />} size="small" type="text" onClick={signOut} style={{ color: iconColor }} />
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'email', label: (user ? resolveDisplay(user.uid, user.email ?? '', ownProfile).name : user), disabled: true },
+                { type: 'divider' as const },
+                { key: 'all-products', icon: <ArrowLeftOutlined />, label: 'All products' },
+                { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
+                { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+                { type: 'divider' as const },
+                { key: 'signout', icon: <LogoutOutlined />, label: 'Sign out', danger: true },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'all-products') window.location.href = '/';
+                if (key === 'profile') window.location.href = '/profile';
+                if (key === 'settings') { setWorkspaceOpen(true); if (user) getWorkspaceSettings(user.uid).then(setSettings); }
+                if (key === 'signout') signOut();
+              },
+            }}
+          >
+            <span style={{ display: 'inline-flex', cursor: 'pointer' }}>
+              {user?.email
+                ? <UserAvatar email={user.email} seed={user ? resolveDisplay(user.uid, user.email, ownProfile).avatarSeed : undefined} photoURL={user ? ownProfile[user.uid]?.avatarPhotoURL : undefined} size={28} />
+                : <span style={{ color: subtleTextColor, fontSize: 13 }}>Account</span>}
+            </span>
+          </Dropdown>
         </div>
       </div>
 
@@ -586,7 +598,6 @@ export function Dashboard() {
                               isOwner={isKanbanOwner(k, user!.uid)}
                               onClick={() => navigate(`/k/${k.id}`)}
                               onManageAccess={() => setAccessKanban(k)}
-                              onClone={() => handleCloneKanban(k)}
                               editableFolders={editableFolders}
                               currentFolder={folder}
                               currentFolderRole={getFolderRole(folder)}
@@ -626,7 +637,6 @@ export function Dashboard() {
                       isOwner={isKanbanOwner(k, user!.uid)}
                       onClick={() => navigate(`/k/${k.id}`)}
                       onManageAccess={() => setAccessKanban(k)}
-                      onClone={() => handleCloneKanban(k)}
                       editableFolders={editableFolders}
                       currentFolder={undefined}
                       currentFolderRole={undefined}
@@ -789,6 +799,20 @@ export function Dashboard() {
           onDelete={() => handleDelete('board')}
         />
 
+        <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 20, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Switch
+              size="small"
+              checked={settings.accoladesEnabled ?? true}
+              onChange={handleWorkspaceAccoladesChange}
+            />
+            <span style={{ fontSize: 13, color: '#555' }}>Celebrate card moves (confetti) by default</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+            Applies to any kanban or folder that hasn't set its own preference.
+          </div>
+        </div>
+
         <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 4 }}>Export</div>
           <Button
@@ -833,7 +857,6 @@ interface KanbanCardProps {
   isOwner: boolean;
   onClick: () => void;
   onManageAccess: () => void;
-  onClone: () => void;
   editableFolders: Folder[];
   currentFolder?: Folder;
   currentFolderRole?: FolderRole;
@@ -843,11 +866,12 @@ interface KanbanCardProps {
 }
 
 function KanbanCard({
-  kanban, isOwner, onClick, onManageAccess, onClone,
+  kanban, isOwner, onClick, onManageAccess,
   editableFolders, currentFolder, currentFolderRole, onAddToFolder, onRemoveFromFolder, onCreateFolder,
 }: KanbanCardProps) {
   const accentColor = kanban.columns[0]?.color ?? '#1a1a2e';
   const canEditFolder = !currentFolder || currentFolderRole === 'owner' || currentFolderRole === 'editor';
+  const ownerProfiles = useUserProfiles([kanban.ownerId]);
 
   const folderMenuItems = [
     ...(currentFolder && canEditFolder ? [
@@ -913,16 +937,6 @@ function KanbanCard({
                 </Tooltip>
               </Dropdown>
             )}
-            <Tooltip title="Duplicate kanban">
-              <button
-                onClick={e => { e.stopPropagation(); onClone(); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#bbb', borderRadius: 4, lineHeight: 1, fontSize: 14 }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#555')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#bbb')}
-              >
-                <CopyOutlined />
-              </button>
-            </Tooltip>
             {isOwner && (
               <Tooltip title="Manage access">
                 <button
@@ -938,7 +952,9 @@ function KanbanCard({
           </div>
         </div>
         {!isOwner && kanban.ownerEmail && (
-          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>Shared by {kanban.ownerEmail}</div>
+          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
+            Shared by {resolveDisplay(kanban.ownerId, kanban.ownerEmail, ownerProfiles).name}
+          </div>
         )}
         <MiniProgressBar kanban={kanban} />
         <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>

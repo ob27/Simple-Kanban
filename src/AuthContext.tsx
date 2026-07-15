@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { User } from 'firebase/auth';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
+import {
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as fbSignOut,
+  onAuthStateChanged, sendPasswordResetEmail, signInAnonymously as fbSignInAnonymously,
+} from 'firebase/auth';
 import { auth } from './firebase';
 
 interface AuthContextValue {
@@ -11,6 +14,7 @@ interface AuthContextValue {
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  signInAnonymously: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,8 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await sendPasswordResetEmail(auth, email);
   }
 
+  async function signInAnonymously() {
+    await fbSignInAnonymously(auth);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, resetPassword }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, resetPassword, signInAnonymously }}>
       {children}
     </AuthContext.Provider>
   );

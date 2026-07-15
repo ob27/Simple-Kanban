@@ -12,6 +12,11 @@ export interface CardComment {
   email: string;
   text: string;
   createdAt: number;
+  imageUrl?: string;
+  imagePath?: string;
+  imageSize?: number;
+  // emoji -> array of uids who reacted with it
+  reactions?: Record<string, string[]>;
 }
 
 export interface CardAttachment {
@@ -22,6 +27,23 @@ export interface CardAttachment {
   size: number;
   type: string;
 }
+
+// A board-level responsibility label a card can be assigned to (e.g. "Asset
+// Manager") — a stable `id` separate from the editable `label` so renaming
+// a label later doesn't orphan cards that already reference it. Explicitly
+// NOT named "Role"/"ROLE_*" — that vocabulary is already used throughout
+// this app for access control (creator/co-owner/member/viewer, see
+// AccessModal.tsx's ROLE_LABELS/ROLE_COLORS), a different concept entirely.
+export interface AssignmentDefinition {
+  id: string;
+  label: string;
+}
+
+// Discriminated union so a card's assignment is unambiguously either a real
+// member or free text, never both at once.
+export type CardAssignmentValue =
+  | { kind: 'member'; uid: string }
+  | { kind: 'freeText'; text: string };
 
 export interface KanbanCard {
   id: string;
@@ -34,6 +56,7 @@ export interface KanbanCard {
   storyPoints?: number;
   movedAt?: number;
   attachments?: CardAttachment[];
+  cardAssignments?: Record<string, CardAssignmentValue>;
 }
 
 export type FolderRole = 'owner' | 'editor' | 'viewer';
@@ -72,6 +95,8 @@ export interface Kanban {
   showLogo?: boolean;
   showKanbanLogo?: boolean;
   showFolderLogo?: boolean;
+  showSearchBar?: boolean;
+  showShareCluster?: boolean;
   kanbanLogoUrl?: string;
   wrapCardText?: boolean;
   cardFontSize?: number;
@@ -89,4 +114,6 @@ export interface Kanban {
   staleAfterDays?: number;
   accoladesEnabled?: boolean;
   attachmentsBytes?: number;
+  assignmentDefinitions?: AssignmentDefinition[];
+  showAssignmentsOnCard?: boolean;
 }

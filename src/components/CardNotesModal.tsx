@@ -1,10 +1,16 @@
 import { useState, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { Modal, Input, Button, Popconfirm, Dropdown, InputNumber, Select } from 'antd';
-import { SendOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, MoreOutlined, FileOutlined, PaperClipOutlined } from '@ant-design/icons';
-import type { KanbanCard, CardComment, Kanban, CardAttachment } from '../types';
+import { Modal, Input, Button, Popconfirm, Dropdown, InputNumber, Select, Segmented, message, Tooltip } from 'antd';
+import {
+  SendOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, MoreOutlined,
+  FileOutlined, PaperClipOutlined, SmileOutlined, PictureOutlined, UserOutlined,
+} from '@ant-design/icons';
+import type { KanbanCard, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue } from '../types';
+import type { KanbanMember } from '../utils/kanbanMembers';
 import { UserAvatar } from './UserAvatar';
+import { EmojiPicker } from './EmojiPicker';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
 
 interface CardUpdates {
   title?: string;
@@ -22,14 +28,19 @@ interface Props {
   showStoryPoints?: boolean;
   onClose: () => void;
   onSaveCard: (cardId: string, updates: CardUpdates) => void;
-  onAddComment: (cardId: string, text: string) => void;
+  onAddComment: (cardId: string, text: string, image?: { url: string; path: string; size: number }) => void;
   onEditComment: (cardId: string, commentId: string, text: string) => void;
   onDeleteComment: (cardId: string, commentId: string) => void;
+  onToggleReaction?: (commentId: string, emoji: string) => void;
   onSplitCard?: (titles: string[]) => void;
   otherKanbans?: Kanban[];
   onMoveOrCopy?: (targetKanbanId: string, mode: 'move' | 'copy') => void;
   onUploadAttachment?: (file: File) => void;
   onDeleteAttachment?: (attachment: CardAttachment) => void;
+  onUploadCommentImage?: (file: File) => Promise<{ url: string; path: string; size: number } | null>;
+  assignmentDefinitions?: AssignmentDefinition[];
+  members?: KanbanMember[];
+  onSaveCardAssignment?: (cardId: string, definitionId: string, value: CardAssignmentValue | null) => void;
 }
 
 function linkify(text: string): ReactNode[] {
@@ -50,13 +61,93 @@ function relativeTime(ts: number): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+// One row per board-defined Assignment label — lets the value be either an
+// existing board member (picked from a Select) or free text (for someone
+// without an account yet). `readOnly` mirrors this modal's existing pattern
+// (already `= isViewer` at the call site), so Viewers see the resolved
+// value but can't edit it, same as Notes.
+function AssignmentRow({ label, value, members, readOnly, onChange }: {
+  label: string;
+  value: CardAssignmentValue | null;
+  members: KanbanMember[];
+  readOnly?: boolean;
+  onChange: (next: CardAssignmentValue | null) => void;
+}) {
+  const [mode, setMode] = useState<'member' | 'freeText'>(value?.kind === 'freeText' ? 'freeText' : 'member');
+  const [freeTextDraft, setFreeTextDraft] = useState(value?.kind === 'freeText' ? value.text : '');
+  const profiles = useUserProfiles(value?.kind === 'member' ? [value.uid] : []);
+
+  if (readOnly) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+        <span style={{ color: '#999', minWidth: 120, fontWeight: 600 }}>{label}</span>
+        {!value && <span style={{ color: '#bbb' }}>—</span>}
+        {value?.kind === 'member' && (() => {
+          const m = members.find(mem => mem.uid === value.uid);
+          const display = resolveDisplay(value.uid, m?.email ?? '', profiles);
+          return (
+            <>
+              <UserAvatar email={m?.email || value.uid} seed={display.avatarSeed} photoURL={display.avatarPhotoURL} size={20} />
+              <span>{display.name || 'Unknown user'}</span>
+            </>
+          );
+        })()}
+        {value?.kind === 'freeText' && <span style={{ fontStyle: 'italic', color: '#555' }}>{value.text}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 13, color: '#555', minWidth: 120, fontWeight: 600 }}>{label}</span>
+        <Segmented
+          size="small"
+          value={mode}
+          onChange={v => setMode(v as 'member' | 'freeText')}
+          options={[
+            { label: <UserOutlined />, value: 'member' },
+            { label: 'Text', value: 'freeText' },
+          ]}
+        />
+        {value && (
+          <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => onChange(null)} />
+        )}
+      </div>
+      {mode === 'member' ? (
+        <Select
+          size="small"
+          showSearch
+          allowClear
+          placeholder="Assign a board member…"
+          value={value?.kind === 'member' ? value.uid : undefined}
+          optionFilterProp="label"
+          onChange={uid => onChange(uid ? { kind: 'member', uid } : null)}
+          options={members.map(m => ({ value: m.uid, label: m.email || m.uid }))}
+        />
+      ) : (
+        <Input
+          size="small"
+          placeholder="Name of someone without an account yet…"
+          value={freeTextDraft}
+          onChange={e => setFreeTextDraft(e.target.value)}
+          onBlur={() => onChange(freeTextDraft.trim() ? { kind: 'freeText', text: freeTextDraft.trim() } : null)}
+          onPressEnter={e => (e.currentTarget as HTMLInputElement).blur()}
+        />
+      )}
+    </div>
+  );
+}
+
 export function CardNotesModal({
   card, columnColor, currentUser, canDeleteAnyComment, readOnly, showStoryPoints,
-  onClose, onSaveCard, onAddComment, onEditComment, onDeleteComment,
-  onSplitCard, otherKanbans, onMoveOrCopy, onUploadAttachment, onDeleteAttachment,
+  onClose, onSaveCard, onAddComment, onEditComment, onDeleteComment, onToggleReaction,
+  onSplitCard, otherKanbans, onMoveOrCopy, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
+  assignmentDefinitions, members, onSaveCardAssignment,
 }: Props) {
   const { isMobile } = useBreakpoint();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const commentImageInputRef = useRef<HTMLInputElement>(null);
   const attachments: CardAttachment[] = card.attachments ?? [];
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -70,6 +161,9 @@ export function CardNotesModal({
   const [notesValue, setNotesValue] = useState(card.notes ?? '');
   const [storyPointsValue, setStoryPointsValue] = useState<number | null>(card.storyPoints ?? null);
   const [commentText, setCommentText] = useState('');
+  const [commentImageFile, setCommentImageFile] = useState<File | null>(null);
+  const [commentImagePreview, setCommentImagePreview] = useState<string | null>(null);
+  const [sendingComment, setSendingComment] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [hoveredCommentId, setHoveredCommentId] = useState<string | null>(null);
@@ -78,6 +172,7 @@ export function CardNotesModal({
   const [moveMode, setMoveMode] = useState<'move' | 'copy' | null>(null);
   const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
   const comments: CardComment[] = card.comments ?? [];
+  const commentProfiles = useUserProfiles([...comments.map(c => c.uid), currentUser.uid]);
 
   function handleTitleBlur() {
     const trimmed = titleValue.trim();
@@ -123,11 +218,35 @@ export function CardNotesModal({
     setMoveTargetId(null);
   }
 
-  function handleSendComment() {
+  function handleCommentImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setCommentImageFile(file);
+    setCommentImagePreview(URL.createObjectURL(file));
+  }
+
+  function clearCommentImage() {
+    if (commentImagePreview) URL.revokeObjectURL(commentImagePreview);
+    setCommentImageFile(null);
+    setCommentImagePreview(null);
+  }
+
+  async function handleSendComment() {
     const text = commentText.trim();
-    if (!text) return;
-    onAddComment(card.id, text);
+    if (!text && !commentImageFile) return;
+    let image: { url: string; path: string; size: number } | undefined;
+    if (commentImageFile) {
+      if (!onUploadCommentImage) { message.error('Cannot attach image here'); return; }
+      setSendingComment(true);
+      const uploaded = await onUploadCommentImage(commentImageFile);
+      setSendingComment(false);
+      if (!uploaded) return;
+      image = uploaded;
+    }
+    onAddComment(card.id, text, image);
     setCommentText('');
+    clearCommentImage();
   }
 
   function startEditComment(c: CardComment) {
@@ -217,6 +336,7 @@ export function CardNotesModal({
             <InputNumber
               size="small"
               min={0}
+              max={9}
               value={storyPointsValue}
               onChange={handleStoryPointsChange}
               readOnly={readOnly}
@@ -248,6 +368,32 @@ export function CardNotesModal({
             />
           )}
         </div>
+
+        {/* Assignments — omitted entirely when the board has no assignment
+            labels defined; otherwise always shown, matching how Notes and
+            Attachments already render unconditionally. */}
+        {assignmentDefinitions && assignmentDefinitions.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#999', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
+              Assignments
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {assignmentDefinitions.map(def => {
+                const value = card.cardAssignments?.[def.id] ?? null;
+                return (
+                  <AssignmentRow
+                    key={def.id}
+                    label={def.label}
+                    value={value}
+                    members={members ?? []}
+                    readOnly={readOnly}
+                    onChange={next => onSaveCardAssignment?.(card.id, def.id, next)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Attachments */}
         {(attachments.length > 0 || (!readOnly && onUploadAttachment)) && (
@@ -321,6 +467,7 @@ export function CardNotesModal({
               const canDelete = !readOnly && (c.uid === currentUser.uid || canDeleteAnyComment);
               const isEditing = editingCommentId === c.id;
               const isHovered = hoveredCommentId === c.id;
+              const display = resolveDisplay(c.uid, c.email, commentProfiles);
 
               return (
                 <div
@@ -329,10 +476,10 @@ export function CardNotesModal({
                   onMouseEnter={() => setHoveredCommentId(c.id)}
                   onMouseLeave={() => setHoveredCommentId(null)}
                 >
-                  <UserAvatar email={c.email} size={28} />
+                  <UserAvatar email={c.email} seed={display.avatarSeed} photoURL={display.avatarPhotoURL} size={28} />
                   <div style={{ flex: 1, background: '#f8f9fb', borderRadius: 8, padding: '8px 12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#444' }}>{c.email}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#444' }}>{display.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span style={{ fontSize: 11, color: '#bbb' }}>{relativeTime(c.createdAt)}</span>
                         {(canEdit || canDelete) && (isHovered || isEditing) && !isEditing && (
@@ -384,7 +531,52 @@ export function CardNotesModal({
                         </div>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 13, color: '#333', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{linkify(c.text)}</div>
+                      <>
+                        {c.text && (
+                          <div style={{ fontSize: 13, color: '#333', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{linkify(c.text)}</div>
+                        )}
+                        {c.imageUrl && (
+                          <a href={c.imageUrl} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={c.imageUrl}
+                              alt="comment attachment"
+                              style={{ maxWidth: 180, maxHeight: 180, borderRadius: 8, marginTop: c.text ? 6 : 0, display: 'block' }}
+                            />
+                          </a>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                          {Object.entries(c.reactions ?? {}).map(([emoji, uids]) => (
+                            <button
+                              key={emoji}
+                              onClick={() => onToggleReaction?.(c.id, emoji)}
+                              disabled={readOnly || !onToggleReaction}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 3, fontSize: 12,
+                                padding: '1px 7px', borderRadius: 10,
+                                border: uids.includes(currentUser.uid) ? '1px solid #1677ff' : '1px solid #eee',
+                                background: uids.includes(currentUser.uid) ? '#e6f0ff' : '#fff',
+                                cursor: readOnly || !onToggleReaction ? 'default' : 'pointer',
+                              }}
+                            >
+                              <span>{emoji}</span>
+                              <span style={{ color: '#888', fontSize: 11 }}>{uids.length}</span>
+                            </button>
+                          ))}
+                          {!readOnly && onToggleReaction && (
+                            <EmojiPicker onSelect={emoji => onToggleReaction(c.id, emoji)}>
+                              <button
+                                style={{
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  width: 20, height: 20, borderRadius: 10, border: '1px solid #eee',
+                                  background: '#fff', cursor: 'pointer', color: '#bbb', fontSize: 12, lineHeight: 1,
+                                }}
+                              >
+                                +
+                              </button>
+                            </EmojiPicker>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -395,21 +587,63 @@ export function CardNotesModal({
           {/* Add comment — hidden for viewers */}
           {!readOnly && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <UserAvatar email={currentUser.email} size={28} />
-              <div style={{ flex: 1, display: 'flex', gap: 8 }}>
-                <Input
-                  value={commentText}
-                  onChange={e => setCommentText(e.target.value)}
-                  onPressEnter={handleSendComment}
-                  placeholder="Add a comment…"
-                  style={{ flex: 1, fontSize: 13 }}
-                />
-                <Button
-                  type="primary"
-                  icon={<SendOutlined />}
-                  onClick={handleSendComment}
-                  disabled={!commentText.trim()}
-                />
+              <UserAvatar
+                email={currentUser.email}
+                seed={commentProfiles[currentUser.uid]?.avatarSeed || currentUser.email}
+                photoURL={commentProfiles[currentUser.uid]?.avatarPhotoURL}
+                size={28}
+              />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {commentImagePreview && (
+                  <div style={{ position: 'relative', width: 64 }}>
+                    <img
+                      src={commentImagePreview}
+                      alt="attachment preview"
+                      style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid #eee' }}
+                    />
+                    <button
+                      onClick={clearCommentImage}
+                      style={{
+                        position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%',
+                        background: '#fff', border: '1px solid #eee', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                      }}
+                    >
+                      <CloseOutlined style={{ fontSize: 8, color: '#999' }} />
+                    </button>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input
+                    value={commentText}
+                    onChange={e => setCommentText(e.target.value)}
+                    onPressEnter={handleSendComment}
+                    placeholder="Add a comment…"
+                    style={{ flex: 1, fontSize: 13 }}
+                  />
+                  <input
+                    ref={commentImageInputRef}
+                    type="file"
+                    accept="image/*,.gif"
+                    style={{ display: 'none' }}
+                    onChange={handleCommentImageChange}
+                  />
+                  <Tooltip title="Attach image or GIF">
+                    <Button icon={<PictureOutlined />} onClick={() => commentImageInputRef.current?.click()} />
+                  </Tooltip>
+                  <EmojiPicker onSelect={emoji => setCommentText(t => t + emoji)}>
+                    <Tooltip title="Add emoji">
+                      <Button icon={<SmileOutlined />} />
+                    </Tooltip>
+                  </EmojiPicker>
+                  <Button
+                    type="primary"
+                    icon={<SendOutlined />}
+                    loading={sendingComment}
+                    onClick={handleSendComment}
+                    disabled={!commentText.trim() && !commentImageFile}
+                  />
+                </div>
               </div>
             </div>
           )}

@@ -3,7 +3,7 @@ import { Modal } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { ColumnConfig, KanbanCard } from '../types';
+import type { ColumnConfig, KanbanCard, AssignmentDefinition } from '../types';
 import { KanbanCard as KanbanCardComponent } from './KanbanCard';
 
 interface Props {
@@ -21,11 +21,15 @@ interface Props {
   selectMode?: boolean;
   selectedCardIds?: Set<string>;
   onToggleSelect?: (cardId: string) => void;
+  assignmentDefinitions?: AssignmentDefinition[];
+  showAssignmentsOnCard?: boolean;
+  memberEmailByUid?: Record<string, string>;
 }
 
 export function KanbanColumn({
   config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, wrapCardText, isViewer, maxCards,
   showStoryPoints, staleAfterDays, selectMode, selectedCardIds, onToggleSelect,
+  assignmentDefinitions, showAssignmentsOnCard, memberEmailByUid,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: config.id });
   const visibleCards = maxCards ? cards.slice(0, maxCards) : cards;
@@ -71,7 +75,7 @@ export function KanbanColumn({
 
       <div style={{ height: 2, background: config.color, opacity: 0.25, flexShrink: 0 }} />
 
-      <div ref={setNodeRef} style={{
+      <div ref={setNodeRef} className="scrollbar-hidden" style={{
         flex: 1, overflowY: 'auto', padding: 10,
         display: 'flex', flexDirection: 'column', gap: 8,
         background: isOver ? '#F2F7FF' : '#F8F9FB',
@@ -93,6 +97,9 @@ export function KanbanColumn({
               selectMode={selectMode}
               selected={selectedCardIds?.has(card.id)}
               onToggleSelect={onToggleSelect ? () => onToggleSelect(card.id) : undefined}
+              assignmentDefinitions={assignmentDefinitions}
+              showAssignmentsOnCard={showAssignmentsOnCard}
+              memberEmailByUid={memberEmailByUid}
             />
           ))}
         </SortableContext>

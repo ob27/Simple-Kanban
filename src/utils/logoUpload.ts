@@ -6,6 +6,7 @@ export interface WorkspaceSettings {
   navLogoUrl: string | null;
   boardLogoUrl: string | null;
   navBgColor: string;
+  accoladesEnabled?: boolean;
 }
 
 const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -26,7 +27,12 @@ export async function getWorkspaceSettings(uid: string): Promise<WorkspaceSettin
     navLogoUrl,
     boardLogoUrl,
     navBgColor: (d.navBgColor as string | null) ?? '#1a1a2e',
+    accoladesEnabled: d.accoladesEnabled as boolean | undefined,
   };
+}
+
+export async function saveWorkspaceAccolades(uid: string, enabled: boolean): Promise<void> {
+  await setDoc(doc(db, 'users', uid), { accoladesEnabled: enabled }, { merge: true });
 }
 
 export async function uploadLogo(uid: string, slot: 'nav' | 'board', file: File): Promise<string> {

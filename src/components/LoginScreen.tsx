@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function LoginScreen({ redirectAfterLogin }: Props) {
-  const { signIn, resetPassword } = useAuth();
+  const { signIn, resetPassword, signInAnonymously } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,6 @@ export function LoginScreen({ redirectAfterLogin }: Props) {
           <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.5px' }}>
             Simple Kanban
           </div>
-          <div style={{ fontSize: 12, color: '#aaa', marginTop: 2, fontWeight: 500 }}>by Oestler</div>
           <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
             {mode === 'signin' ? 'Sign in to access your boards' : 'Reset your password'}
           </div>
@@ -72,6 +71,11 @@ export function LoginScreen({ redirectAfterLogin }: Props) {
             <Button type="primary" htmlType="submit" size="large" loading={loading} block style={{ fontWeight: 600 }}>
               Sign in
             </Button>
+            {import.meta.env.DEV && (
+              <Button type="dashed" block style={{ marginTop: 8 }} onClick={() => signInAnonymously()}>
+                Dev: sign in anonymously
+              </Button>
+            )}
           </Form>
         ) : resetSent ? (
           <div style={{ textAlign: 'center' }}>

@@ -104,7 +104,7 @@ export function FolderInvitePage() {
       }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.3px' }}>
-            Simple Kanban <span style={{ fontWeight: 400, color: '#aaa', fontSize: 14 }}>by Oestler</span>
+            Simple Kanban
           </div>
           <div style={{ marginTop: 20, fontSize: 13, color: '#888' }}>
             You've been invited as a <strong>{invite?.role === 'editor' ? 'Editor' : 'Viewer'}</strong>

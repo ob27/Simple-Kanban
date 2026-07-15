@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { Drawer, Button, Input, Form, InputNumber, Popconfirm, message, Select, Tooltip, Switch } from 'antd';
 const { TextArea } = Input;
 import { CopyOutlined, ReloadOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, PrinterOutlined } from '@ant-design/icons';
-import type { Kanban } from '../types';
+import type { Kanban, AssignmentDefinition } from '../types';
 import { regenerateInvite } from '../store';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { uploadKanbanLogo, deleteKanbanLogo } from '../utils/logoUpload';
-import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES, formatBytes } from '../constants';
+import { buildKanbanInviteUrl } from '../utils/inviteLink';
+import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES, MAX_ASSIGNMENT_DEFINITIONS, formatBytes } from '../constants';
 
 const MONTH_OPTIONS = [
   'January','February','March','April','May','June',
@@ -26,11 +27,12 @@ interface Props {
   onDelete: () => void;
   onExportCSV: () => void;
   onPrintReport: () => void;
+  onDuplicate: () => void;
   folderLogoUrl?: string | null;
   accountAttachmentsBytes?: number;
 }
 
-export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV, onPrintReport, folderLogoUrl, accountAttachmentsBytes }: Props) {
+export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV, onPrintReport, onDuplicate, folderLogoUrl, accountAttachmentsBytes }: Props) {
   const [form] = Form.useForm();
   const [regenerating, setRegenerating] = useState(false);
   const [columnColors, setColumnColors] = useState<string[]>([]);
@@ -39,6 +41,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
   const [kanbanLogoUrl, setKanbanLogoUrl] = useState<string | undefined>(undefined);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [staleAfterDaysValue, setStaleAfterDaysValue] = useState<number | undefined>(undefined);
+  const [assignmentDefs, setAssignmentDefs] = useState<AssignmentDefinition[]>([]);
   const logoFileRef = useRef<HTMLInputElement>(null);
   const { isMobile } = useBreakpoint();
 
@@ -49,6 +52,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       setColumnMaxCards(kanban.columns.map(c => c.maxCards));
       setKanbanLogoUrl(kanban.kanbanLogoUrl);
       setStaleAfterDaysValue(kanban.staleAfterDays);
+      setAssignmentDefs(kanban.assignmentDefinitions ?? []);
       form.setFieldsValue({
         name: kanban.name,
         totalEstimated: kanban.totalEstimated,
@@ -64,9 +68,12 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         showLogo: kanban.showLogo ?? false,
         showKanbanLogo: kanban.showKanbanLogo ?? false,
         showFolderLogo: kanban.showFolderLogo ?? false,
+        showSearchBar: kanban.showSearchBar ?? false,
+        showShareCluster: kanban.showShareCluster ?? false,
         wrapCardText: kanban.wrapCardText ?? false,
         cardFontSize: kanban.cardFontSize ?? 15,
         showStoryPoints: kanban.showStoryPoints ?? false,
+        showAssignmentsOnCard: kanban.showAssignmentsOnCard ?? false,
         accoladesEnabled: kanban.accoladesEnabled ?? true,
         ...Object.fromEntries(kanban.columns.map((c, i) => [`col_${i}`, c.label])),
       });
@@ -82,6 +89,15 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       description: columnDescriptions[i] ?? col.description ?? '',
       maxCards: columnMaxCards[i] ?? undefined,
     }));
+    // Blank rows (never given a label) are dropped rather than saved as
+    // empty definitions. Deleted definitions are NOT cleaned up off
+    // existing cards here — cardAssignments referencing a since-removed id
+    // just stop rendering anywhere (see CardNotesModal.tsx/KanbanCard.tsx),
+    // which avoids this save also having to rewrite every card's data.
+    const cleanedAssignmentDefs = assignmentDefs
+      .filter(d => d.label.trim())
+      .slice(0, MAX_ASSIGNMENT_DEFINITIONS)
+      .map(d => ({ ...d, label: d.label.trim() }));
     onChange({
       ...kanban,
       name: vals.name as string,
@@ -98,18 +114,22 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       showLogo: vals.showLogo as boolean,
       showKanbanLogo: vals.showKanbanLogo as boolean,
       showFolderLogo: vals.showFolderLogo as boolean,
+      showSearchBar: vals.showSearchBar as boolean,
+      showShareCluster: vals.showShareCluster as boolean,
       wrapCardText: vals.wrapCardText as boolean,
       kanbanLogoUrl,
       cardFontSize: vals.cardFontSize as number,
       showStoryPoints: vals.showStoryPoints as boolean,
+      showAssignmentsOnCard: vals.showAssignmentsOnCard as boolean,
       accoladesEnabled: vals.accoladesEnabled as boolean,
       staleAfterDays: staleAfterDaysValue,
       columns: updatedColumns,
+      assignmentDefinitions: cleanedAssignmentDefs.length ? cleanedAssignmentDefs : undefined,
     });
     onClose();
   }
 
-  const inviteUrl = `${window.location.origin}/simple-kanban/invite/${kanban.inviteToken}`;
+  const inviteUrl = buildKanbanInviteUrl(kanban);
 
   function copyInvite() {
     navigator.clipboard.writeText(inviteUrl);
@@ -227,6 +247,36 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
           </Form.Item>
         ))}
 
+        {/* Assignments */}
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Assignments</div>
+        <div style={{ marginBottom: 8, fontSize: 12, color: '#999' }}>
+          Define up to {MAX_ASSIGNMENT_DEFINITIONS} responsibility labels (e.g. &quot;Asset Manager&quot;) that can be assigned per card.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+          {assignmentDefs.map((def, i) => (
+            <div key={def.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Input
+                value={def.label}
+                placeholder={`Assignment ${i + 1} (e.g. Asset Manager)`}
+                onChange={e => setAssignmentDefs(prev => prev.map(d => d.id === def.id ? { ...d, label: e.target.value } : d))}
+                style={{ flex: 1 }}
+              />
+              <Button
+                size="small" type="text" danger icon={<DeleteOutlined />}
+                onClick={() => setAssignmentDefs(prev => prev.filter(d => d.id !== def.id))}
+              />
+            </div>
+          ))}
+          <Button
+            size="small"
+            disabled={assignmentDefs.length >= MAX_ASSIGNMENT_DEFINITIONS}
+            onClick={() => setAssignmentDefs(prev => [...prev, { id: crypto.randomUUID(), label: '' }])}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            + Add assignment{assignmentDefs.length >= MAX_ASSIGNMENT_DEFINITIONS ? ` (max ${MAX_ASSIGNMENT_DEFINITIONS})` : ''}
+          </Button>
+        </div>
+
         {/* Visibility */}
         <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Board sections</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
@@ -276,10 +326,28 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
             <span style={{ fontSize: 13, color: folderLogoUrl ? '#555' : '#bbb' }}>Show folder icon</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Form.Item name="showSearchBar" valuePropName="checked" noStyle>
+              <Switch size="small" />
+            </Form.Item>
+            <span style={{ fontSize: 13, color: '#555' }}>Show card search bar</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Form.Item name="showShareCluster" valuePropName="checked" noStyle>
+              <Switch size="small" />
+            </Form.Item>
+            <span style={{ fontSize: 13, color: '#555' }}>Show member avatars & invite</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Form.Item name="showStoryPoints" valuePropName="checked" noStyle>
               <Switch size="small" />
             </Form.Item>
             <span style={{ fontSize: 13, color: '#555' }}>Show story points</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Form.Item name="showAssignmentsOnCard" valuePropName="checked" noStyle>
+              <Switch size="small" />
+            </Form.Item>
+            <span style={{ fontSize: 13, color: '#555' }}>Show assignments on card face</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Form.Item name="accoladesEnabled" valuePropName="checked" noStyle>
@@ -455,6 +523,13 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
               {formatBytes(accountAttachmentsBytes)} of {formatBytes(MAX_USER_ATTACHMENTS_BYTES)} used across your account
             </div>
           )}
+        </div>
+
+        {/* Duplicate */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+          <Button icon={<CopyOutlined />} block onClick={onDuplicate}>
+            Duplicate this kanban
+          </Button>
         </div>
 
         {/* Danger zone */}

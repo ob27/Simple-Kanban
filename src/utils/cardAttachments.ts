@@ -35,6 +35,42 @@ export async function uploadCardAttachment(
   return updated;
 }
 
+// Comment images/gifs count against the same per-kanban/per-account caps as
+// card attachments. Deliberately does NOT write attachmentsBytes to
+// Firestore itself (unlike uploadCardAttachment) — the comment this image
+// belongs to doesn't exist yet at upload time, and a separate immediate
+// setDoc here would race the debounced save that adds the comment moments
+// later, risking the byte bump getting silently overwritten. Instead the
+// caller folds the returned size into the same local state update that
+// adds the comment (see BoardPage's handleCardsChange bytes delta param).
+export async function uploadCommentImage(
+  kanban: Kanban,
+  cardId: string,
+  file: File,
+  otherOwnedKanbansBytes = 0,
+): Promise<{ url: string; path: string; size: number }> {
+  if ((kanban.attachmentsBytes ?? 0) + file.size > MAX_ATTACHMENTS_BYTES) {
+    throw new Error('over-kanban-limit');
+  }
+  if (otherOwnedKanbansBytes + (kanban.attachmentsBytes ?? 0) + file.size > MAX_USER_ATTACHMENTS_BYTES) {
+    throw new Error('over-user-limit');
+  }
+  const id = crypto.randomUUID();
+  const path = `cardAttachments/${kanban.id}/${cardId}/comments/${id}-${file.name}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file);
+  const url = await getDownloadURL(storageRef);
+  return { url, path, size: file.size };
+}
+
+export async function deleteCommentImageFile(path: string): Promise<void> {
+  try {
+    await deleteObject(ref(storage, path));
+  } catch {
+    // already gone — proceed regardless
+  }
+}
+
 export async function deleteCardAttachment(kanban: Kanban, cardId: string, attachment: CardAttachment): Promise<Kanban> {
   try {
     await deleteObject(ref(storage, attachment.path));

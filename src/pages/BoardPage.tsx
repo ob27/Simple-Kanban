@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Popover, Spin, Switch, Badge, Modal, Radio, Select, message } from 'antd';
-import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined } from '@ant-design/icons';
+import { Button, Popover, Spin, Switch, Badge, Modal, Radio, Select, message, Input, Tooltip } from 'antd';
+import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined, SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { KanbanCard, CardAttachment } from '../types';
-import { saveKanban, deleteKanban, isKanbanOwner, loadUserKanbans, moveCardToKanban } from '../store';
+import { saveKanban, deleteKanban, isKanbanOwner, loadUserKanbans, moveCardToKanban, cloneKanban } from '../store';
 import type { Kanban as KanbanType } from '../types';
-import { uploadCardAttachment, deleteCardAttachment } from '../utils/cardAttachments';
+import { uploadCardAttachment, deleteCardAttachment, uploadCommentImage } from '../utils/cardAttachments';
 import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES, formatBytes } from '../constants';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { exportKanbanCSV } from '../utils/csvExport';
 import { getWorkspaceSettings } from '../utils/logoUpload';
+import { buildWildcardMatcher } from '../utils/wildcardSearch';
+import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
+import { getKanbanMembers } from '../utils/kanbanMembers';
 import { PillFilterModal } from '../components/PillFilterModal';
 import { useAuth } from '../AuthContext';
 import { ProgressBar } from '../components/ProgressBar';
@@ -18,6 +21,8 @@ import { ProjectLifeline } from '../components/ProjectLifeline';
 import { KanbanBoard } from '../components/KanbanBoard';
 import { AddCardModal } from '../components/AddCardModal';
 import { KanbanSettings } from '../components/KanbanSettings';
+import { AccessModal } from '../components/AccessModal';
+import { UserAvatar } from '../components/UserAvatar';
 import { useKanban } from '../hooks/useKanban';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
@@ -35,15 +40,22 @@ export function BoardPage() {
   const [pillFilter, setPillFilter] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [folderAccoladesEnabled, setFolderAccoladesEnabled] = useState<boolean | undefined>(undefined);
+  const [workspaceAccoladesEnabled, setWorkspaceAccoladesEnabled] = useState<boolean | undefined>(undefined);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeSurvivorId, setMergeSurvivorId] = useState<string | null>(null);
   const [otherKanbans, setOtherKanbans] = useState<KanbanType[]>([]);
+  const [cardSearch, setCardSearch] = useState('');
+  const [accessOpen, setAccessOpen] = useState(false);
 
   const isOwner = kanban && user ? isKanbanOwner(kanban, user.uid) : false;
   const isViewer = kanban && user ? (kanban.viewerIds ?? []).includes(user.uid) : false;
   const { isMobile } = useBreakpoint();
+
+  const boardMemberUids = kanban ? Array.from(new Set([kanban.ownerId, ...(kanban.coOwnerIds ?? []), ...kanban.memberIds])) : [];
+  const boardMemberProfiles = useUserProfiles(kanban ? [...boardMemberUids, kanban.ownerId] : []);
+  const boardMembers = kanban && user ? getKanbanMembers(kanban, user.uid, user.email ?? '') : [];
 
   const totalCardCount = kanban ? kanban.cards.length : 0;
   const effectiveTotal = kanban
@@ -53,9 +65,16 @@ export function BoardPage() {
   const uniquePillValues = kanban
     ? [...new Set(kanban.cards.map(c => c.pillValue).filter((v): v is string => !!v))]
     : [];
-  const filteredCards = kanban && pillFilter.size > 0
+  const pillFilteredCards = kanban && pillFilter.size > 0
     ? kanban.cards.filter(c => c.pillValue && pillFilter.has(c.pillValue))
     : kanban?.cards ?? [];
+  const searchTerm = cardSearch.trim();
+  const searchMatcher = searchTerm ? buildWildcardMatcher(searchTerm) : null;
+  const filteredCards = searchMatcher
+    ? pillFilteredCards.filter(c =>
+        searchMatcher(c.title) || searchMatcher(c.notes ?? '') || searchMatcher(c.pillValue ?? '')
+        || (c.comments ?? []).some(comment => searchMatcher(comment.text)))
+    : pillFilteredCards;
 
   // Account-wide attachment usage — only counts boards the user owns, since
   // a shared board's storage cost is attributed to its actual owner, not
@@ -72,7 +91,10 @@ export function BoardPage() {
     if (kanban && !initialised.current) {
       setEditValue(kanban.totalEstimated);
       initialised.current = true;
-      getWorkspaceSettings(kanban.ownerId).then(s => setLogoUrl(s.boardLogoUrl));
+      getWorkspaceSettings(kanban.ownerId).then(s => {
+        setLogoUrl(s.boardLogoUrl);
+        setWorkspaceAccoladesEnabled(s.accoladesEnabled);
+      });
       // Find the folder containing this kanban.
       // Firestore security rules only allow queries filtered by ownerId or memberIds,
       // so we run two simple queries that match the rule, then filter client-side.
@@ -245,20 +267,52 @@ export function BoardPage() {
     }
   }
 
+  // Returns the uploaded image's metadata so CardNotesModal can attach it to
+  // the comment it's about to send. Deliberately doesn't write to Firestore
+  // itself — see uploadCommentImage's comment for why — the byte count is
+  // folded into the same handleCardsChange call that adds the comment.
+  async function handleUploadCommentImage(cardId: string, file: File): Promise<{ url: string; path: string; size: number } | null> {
+    if (!kanban) return null;
+    try {
+      return await uploadCommentImage(kanban, cardId, file, otherOwnedKanbansBytes);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'over-kanban-limit') {
+        message.error(`This board has used ${formatBytes(kanban.attachmentsBytes ?? 0)} of ${formatBytes(MAX_ATTACHMENTS_BYTES)} — delete an attachment to free up space`);
+      } else if (err instanceof Error && err.message === 'over-user-limit') {
+        message.error(`Your account has used ${formatBytes(accountAttachmentsBytes)} of ${formatBytes(MAX_USER_ATTACHMENTS_BYTES)} across all your kanbans — delete an attachment to free up space`);
+      } else {
+        message.error('Failed to upload image');
+      }
+      return null;
+    }
+  }
+
   function deleteCard(cardId: string) {
     if (!kanban) return;
     setKanban({ ...kanban, cards: kanban.cards.filter(c => c.id !== cardId) });
   }
 
-  function handleCardsChange(newCards: KanbanCard[]) {
+  function handleCardsChange(newCards: KanbanCard[], attachmentsBytesDelta = 0) {
     if (!kanban) return;
-    if (pillFilter.size === 0) {
-      setKanban({ ...kanban, cards: newCards });
+    const attachmentsBytes = attachmentsBytesDelta
+      ? Math.max(0, (kanban.attachmentsBytes ?? 0) + attachmentsBytesDelta)
+      : kanban.attachmentsBytes;
+    // KanbanBoard only ever knows about the cards it was handed (`filteredCards`
+    // above), so any interaction there — drag reorder, reactions, comments —
+    // reports back a `newCards` array scoped to whatever's currently visible.
+    // Text search narrows visibility exactly like the pill filter does, so it
+    // has to be checked here too — this used to only test `pillFilter.size`,
+    // which meant searching for a card and then dragging/reacting/commenting
+    // on it silently replaced the whole board with just the search-matched
+    // cards, and the very next autosave wrote that truncated set to Firestore,
+    // permanently deleting every card the search had hidden.
+    if (pillFilter.size === 0 && !searchTerm) {
+      setKanban({ ...kanban, cards: newCards, attachmentsBytes });
       return;
     }
     const visibleIds = new Set(newCards.map(c => c.id));
     const hidden = kanban.cards.filter(c => !visibleIds.has(c.id));
-    setKanban({ ...kanban, cards: [...newCards, ...hidden] });
+    setKanban({ ...kanban, cards: [...newCards, ...hidden], attachmentsBytes });
   }
 
   function confirmEditTotal() {
@@ -276,6 +330,18 @@ export function BoardPage() {
     if (!kanban) return;
     await deleteKanban(kanban);
     navigate('/');
+  }
+
+  async function handleDuplicateKanban() {
+    if (!kanban || !user) return;
+    try {
+      const cloned = await cloneKanban(kanban, user.uid, user.email ?? undefined);
+      message.success(`Duplicated as "${cloned.name}"`);
+      setSettingsOpen(false);
+      navigate(`/k/${cloned.id}`);
+    } catch {
+      message.error('Failed to duplicate kanban');
+    }
   }
 
   const totalPopoverContent = (
@@ -327,11 +393,68 @@ export function BoardPage() {
           : (kanban.showFolderLogo && folderLogoUrl)
           ? folderLogoUrl
           : (kanban.showLogo && logoUrl) ? logoUrl : null;
-        return src ? (
-          <div style={{ display: 'flex', alignItems: 'center', paddingBottom: 2 }}>
-            <img src={src} alt="logo" style={{ height: 52, width: 'auto', objectFit: 'contain' }} />
+        if (!src && !kanban.showSearchBar && !kanban.showShareCluster) return null;
+
+        const memberUids = boardMemberUids;
+        const memberEmailFor = (uid: string) => uid === kanban.ownerId ? (kanban.ownerEmail || uid) : (kanban.memberEmails?.[uid] || uid);
+        const memberDisplayFor = (uid: string) => resolveDisplay(uid, memberEmailFor(uid), boardMemberProfiles);
+        const visibleMembers = memberUids.slice(0, 3);
+        const overflowCount = memberUids.length - visibleMembers.length;
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 2, gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {src && <img src={src} alt="logo" style={{ height: 52, width: 'auto', objectFit: 'contain' }} />}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {kanban.showSearchBar && (
+                <Input
+                  prefix={<SearchOutlined style={{ color: '#aaa' }} />}
+                  suffix={
+                    <Tooltip title="Searches title, notes, the pill, and comments. Use * to match any text — e.g. Alpha* finds AlphaOne and AlphaTwo, *card finds BetaCard, and *urgent* finds it anywhere.">
+                      <InfoCircleOutlined style={{ color: '#bbb', cursor: 'help' }} />
+                    </Tooltip>
+                  }
+                  placeholder="Search cards"
+                  value={cardSearch}
+                  onChange={e => setCardSearch(e.target.value)}
+                  allowClear
+                  style={{ width: isMobile ? 160 : 220, borderRadius: 8 }}
+                />
+              )}
+              {kanban.showShareCluster && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    {visibleMembers.map((uid, i) => {
+                      const display = memberDisplayFor(uid);
+                      return (
+                        <Tooltip key={uid} title={display.name}>
+                          <div style={{ marginLeft: i === 0 ? 0 : -8, borderRadius: '50%', border: '2px solid #EEF0F5' }}>
+                            <UserAvatar email={memberEmailFor(uid)} seed={display.avatarSeed} photoURL={display.avatarPhotoURL} size={28} />
+                          </div>
+                        </Tooltip>
+                      );
+                    })}
+                    {overflowCount > 0 && (
+                      <div style={{
+                        marginLeft: -8, width: 28, height: 28, borderRadius: '50%', background: '#e2e2e8',
+                        border: '2px solid #EEF0F5', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 600, color: '#666', flexShrink: 0,
+                      }}>
+                        +{overflowCount}
+                      </div>
+                    )}
+                  </div>
+                  {isOwner && (
+                    <Button size="small" type="primary" onClick={() => setAccessOpen(true)}>
+                      Invite
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        ) : null;
+        );
       })()}
 
       {showLifeline && (
@@ -378,7 +501,7 @@ export function BoardPage() {
                   {kanban.name}
                 </span>
                 <span style={{ fontSize: 'clamp(12px, 1.1vw, 16px)', fontWeight: 400, color: '#666', lineHeight: 1 }}>
-                  {pillFilter.size > 0
+                  {pillFilter.size > 0 || searchTerm
                     ? `${filteredCards.length} of ${kanban.cards.length} cards`
                     : `${kanban.cards.length} of ${effectiveTotal} cards`}
                 </span>
@@ -386,7 +509,7 @@ export function BoardPage() {
               </div>
               {!isOwner && kanban.ownerEmail && (
                 <span style={{ fontSize: 11, color: '#aaa', fontWeight: 400 }}>
-                  Shared by {kanban.ownerEmail}
+                  Shared by {resolveDisplay(kanban.ownerId, kanban.ownerEmail, boardMemberProfiles).name}
                 </span>
               )}
             </div>
@@ -443,7 +566,7 @@ export function BoardPage() {
         isViewer={isViewer}
         showStoryPoints={kanban.showStoryPoints}
         staleAfterDays={kanban.staleAfterDays}
-        accoladesEnabled={kanban.accoladesEnabled ?? folderAccoladesEnabled ?? true}
+        accoladesEnabled={kanban.accoladesEnabled ?? folderAccoladesEnabled ?? workspaceAccoladesEnabled ?? true}
         selectMode={selectMode}
         selectedCardIds={selectedCardIds}
         onToggleSelect={toggleCardSelection}
@@ -452,6 +575,10 @@ export function BoardPage() {
         onMoveOrCopyCard={handleMoveOrCopyCard}
         onUploadAttachment={handleUploadAttachment}
         onDeleteAttachment={handleDeleteAttachment}
+        onUploadCommentImage={handleUploadCommentImage}
+        assignmentDefinitions={kanban.assignmentDefinitions}
+        showAssignmentsOnCard={kanban.showAssignmentsOnCard}
+        members={boardMembers}
       />
 
       {selectMode && selectedCardIds.size > 0 && (
@@ -525,6 +652,7 @@ export function BoardPage() {
           onDelete={handleDeleteKanban}
           onExportCSV={() => exportKanbanCSV(kanban)}
           onPrintReport={() => window.open(`/simple-kanban/workspace-report?kanbanId=${kanban.id}`, '_blank')}
+          onDuplicate={handleDuplicateKanban}
           folderLogoUrl={folderLogoUrl}
           accountAttachmentsBytes={accountAttachmentsBytes}
         />
@@ -537,6 +665,16 @@ export function BoardPage() {
         onFilterChange={setPillFilter}
         onClose={() => setFilterOpen(false)}
       />
+
+      {accessOpen && user && (
+        <AccessModal
+          kanban={kanban}
+          currentUid={user.uid}
+          currentEmail={user.email ?? ''}
+          onClose={() => setAccessOpen(false)}
+          onChange={setKanban}
+        />
+      )}
     </div>
   );
 }
