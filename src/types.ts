@@ -57,6 +57,33 @@ export interface KanbanCard {
   movedAt?: number;
   attachments?: CardAttachment[];
   cardAssignments?: Record<string, CardAssignmentValue>;
+  checklistInstanceRefs?: CardChecklistInstanceRef[];
+}
+
+// One instance created for this card against a specific linked Checklist
+// Template — a card can have up to 5 (one per link on the board).
+export interface CardChecklistInstanceRef {
+  linkId: string;
+  templateId: string;
+  instanceId: string;
+}
+
+// Simple-Checklists integration — links a Checklist Template (a document
+// living in the separate Simple-Checklists app's `sclTemplates` collection,
+// same shared Firestore project, no shared code between the two repos) to
+// this Kanban's cards. Up to 5 links per board.
+export type InstanceCreationTrigger =
+  | { kind: 'onCardCreation' }
+  | { kind: 'onColumnEntry'; columnId: string }
+  | { kind: 'onDemand' };
+
+export interface CardTemplateChecklistLink {
+  id: string;
+  templateId: string;
+  templateName: string; // denormalized so the settings UI never needs a cross-app read just to list links
+  trigger: InstanceCreationTrigger;
+  linkedAt: number;
+  linkedByUid: string;
 }
 
 export type FolderRole = 'owner' | 'editor' | 'viewer';
@@ -116,4 +143,5 @@ export interface Kanban {
   attachmentsBytes?: number;
   assignmentDefinitions?: AssignmentDefinition[];
   showAssignmentsOnCard?: boolean;
+  cardTemplateChecklistLinks?: CardTemplateChecklistLink[];
 }

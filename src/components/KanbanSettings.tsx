@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { Drawer, Button, Input, Form, InputNumber, Popconfirm, message, Select, Tooltip, Switch } from 'antd';
 const { TextArea } = Input;
 import { CopyOutlined, ReloadOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, PrinterOutlined } from '@ant-design/icons';
-import type { Kanban, AssignmentDefinition } from '../types';
+import type { Kanban, AssignmentDefinition, CardTemplateChecklistLink } from '../types';
 import { regenerateInvite } from '../store';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { uploadKanbanLogo, deleteKanbanLogo } from '../utils/logoUpload';
 import { buildKanbanInviteUrl } from '../utils/inviteLink';
 import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES, MAX_ASSIGNMENT_DEFINITIONS, formatBytes } from '../constants';
+import { ChecklistLinksSection } from './ChecklistLinksSection';
 
 const MONTH_OPTIONS = [
   'January','February','March','April','May','June',
@@ -42,6 +43,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [staleAfterDaysValue, setStaleAfterDaysValue] = useState<number | undefined>(undefined);
   const [assignmentDefs, setAssignmentDefs] = useState<AssignmentDefinition[]>([]);
+  const [checklistLinks, setChecklistLinks] = useState<CardTemplateChecklistLink[]>([]);
   const logoFileRef = useRef<HTMLInputElement>(null);
   const { isMobile } = useBreakpoint();
 
@@ -53,6 +55,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       setKanbanLogoUrl(kanban.kanbanLogoUrl);
       setStaleAfterDaysValue(kanban.staleAfterDays);
       setAssignmentDefs(kanban.assignmentDefinitions ?? []);
+      setChecklistLinks(kanban.cardTemplateChecklistLinks ?? []);
       form.setFieldsValue({
         name: kanban.name,
         totalEstimated: kanban.totalEstimated,
@@ -125,6 +128,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       staleAfterDays: staleAfterDaysValue,
       columns: updatedColumns,
       assignmentDefinitions: cleanedAssignmentDefs.length ? cleanedAssignmentDefs : undefined,
+      cardTemplateChecklistLinks: checklistLinks.length ? checklistLinks : undefined,
     });
     onClose();
   }
@@ -276,6 +280,9 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
             + Add assignment{assignmentDefs.length >= MAX_ASSIGNMENT_DEFINITIONS ? ` (max ${MAX_ASSIGNMENT_DEFINITIONS})` : ''}
           </Button>
         </div>
+
+        {/* Simple Checklists integration */}
+        <ChecklistLinksSection links={checklistLinks} columns={kanban.columns} onChange={setChecklistLinks} />
 
         {/* Visibility */}
         <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Board sections</div>

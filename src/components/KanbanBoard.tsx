@@ -8,7 +8,7 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
-import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue } from '../types';
+import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue, CardChecklistInstanceRef, CardTemplateChecklistLink } from '../types';
 import type { KanbanMember } from '../utils/kanbanMembers';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard as KanbanCardComponent } from './KanbanCard';
@@ -16,8 +16,10 @@ import { CardNotesModal } from './CardNotesModal';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useAuth } from '../AuthContext';
 import { deleteCommentImageFile } from '../utils/cardAttachments';
+import { createChecklistInstanceForCard } from '../utils/checklistIntegration';
 
 interface Props {
+  kanban: Kanban;
   cards: KanbanCard[];
   columns: ColumnConfig[];
   onCardsChange: (cards: KanbanCard[], attachmentsBytesDelta?: number) => void;
@@ -62,13 +64,14 @@ function launchFireworks() {
 }
 
 export function KanbanBoard({
-  cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer,
+  kanban, cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer,
   showStoryPoints, staleAfterDays, accoladesEnabled = true, selectMode, selectedCardIds, onToggleSelect,
   onSplitCard, otherKanbans, onMoveOrCopyCard, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
   assignmentDefinitions, showAssignmentsOnCard, members,
 }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
+  const [creatingChecklistLinkId, setCreatingChecklistLinkId] = useState<string | null>(null);
   const { isMobile, isTablet } = useBreakpoint();
   const { user } = useAuth();
   const memberEmailByUid = Object.fromEntries((members ?? []).map(m => [m.uid, m.email]));
@@ -137,6 +140,29 @@ export function KanbanBoard({
         } else {
           burstConfetti(columns.map(c => c.color));
         }
+      }
+
+      // Simple Checklists integration: fire any onColumnEntry link matching
+      // this target column, skipping links that already have an instance
+      // for this card (so re-entering the same column twice never
+      // duplicates it).
+      const columnEntryLinks = (kanban.cardTemplateChecklistLinks ?? []).filter(l =>
+        l.trigger.kind === 'onColumnEntry' && l.trigger.columnId === targetColumnId
+        && !(moved.checklistInstanceRefs ?? []).some(r => r.linkId === l.id)
+      );
+      if (columnEntryLinks.length > 0 && user) {
+        (async () => {
+          const refs: CardChecklistInstanceRef[] = [];
+          for (const link of columnEntryLinks) {
+            try {
+              const instanceId = await createChecklistInstanceForCard(kanban, moved, link, user.uid, user.email ?? undefined);
+              refs.push({ linkId: link.id, templateId: link.templateId, instanceId });
+            } catch { /* template since archived/deleted — skip */ }
+          }
+          if (refs.length > 0) {
+            onCardsChange(newCards.map(c => c.id === moved.id ? { ...c, checklistInstanceRefs: [...(c.checklistInstanceRefs ?? []), ...refs] } : c));
+          }
+        })();
       }
     }
   }
@@ -221,6 +247,21 @@ export function KanbanBoard({
     }));
   }
 
+  async function handleCreateChecklistOnDemand(link: CardTemplateChecklistLink) {
+    if (!notesCard || !user) return;
+    setCreatingChecklistLinkId(link.id);
+    try {
+      const instanceId = await createChecklistInstanceForCard(kanban, notesCard, link, user.uid, user.email ?? undefined);
+      onCardsChange(cards.map(c => c.id === notesCard.id
+        ? { ...c, checklistInstanceRefs: [...(c.checklistInstanceRefs ?? []), { linkId: link.id, templateId: link.templateId, instanceId }] }
+        : c));
+    } catch {
+      message.error('Failed to create checklist — the template may have been removed.');
+    } finally {
+      setCreatingChecklistLinkId(null);
+    }
+  }
+
   const notesCard = notesCardId ? cards.find(c => c.id === notesCardId) : null;
   const colMinWidth = isMobile ? 200 : isTablet ? 220 : undefined;
 
@@ -289,6 +330,9 @@ export function KanbanBoard({
           assignmentDefinitions={assignmentDefinitions}
           members={members}
           onSaveCardAssignment={handleSaveCardAssignment}
+          checklistLinks={kanban.cardTemplateChecklistLinks}
+          onCreateChecklistOnDemand={handleCreateChecklistOnDemand}
+          creatingChecklistLinkId={creatingChecklistLinkId}
         />
       )}
     </>

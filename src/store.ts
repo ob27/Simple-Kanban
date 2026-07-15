@@ -12,6 +12,7 @@ import {
   DEFAULT_PROJECT_END_YEAR,
   DEFAULT_PROJECT_END_MONTH,
 } from './constants';
+import { syncInheritedAccessForKanban, syncInheritedAccessForKanbanId, selfAddInheritedAccessForKanban } from './utils/checklistIntegration';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -211,6 +212,7 @@ export async function removeMember(kanban: Kanban, uid: string): Promise<Kanban>
     memberEmails: emails,
   };
   await saveKanban(updated);
+  syncInheritedAccessForKanban(updated).catch(() => {});
   return updated;
 }
 
@@ -234,6 +236,7 @@ export async function setMemberRole(
       : viewerIds.filter(id => id !== uid),
   };
   await saveKanban(updated);
+  syncInheritedAccessForKanban(updated).catch(() => {});
   return updated;
 }
 
@@ -255,6 +258,7 @@ export async function joinKanban(kanbanId: string, uid: string, email?: string):
   const update: Record<string, unknown> = { memberIds: arrayUnion(uid) };
   if (email) update[`memberEmails.${uid}`] = email;
   await updateDoc(doc(db, 'kanbans', kanbanId), update);
+  await selfAddInheritedAccessForKanban(kanbanId, uid).catch(() => {});
 }
 
 // ── Default kanban for new users ─────────────────────────────────────────────
@@ -349,6 +353,7 @@ export async function addKanbanToFolder(
         if (memberEmail) update[`memberEmails.${memberId}`] = memberEmail;
         return updateDoc(doc(db, 'kanbans', kanbanId), update).catch(() => {});
       }));
+      syncInheritedAccessForKanbanId(kanbanId).catch(() => {});
     }
   }
 }
@@ -435,6 +440,7 @@ export async function joinFolder(
     if (email) kanbanUpdate[`memberEmails.${uid}`] = email;
     return updateDoc(doc(db, 'kanbans', kanbanId), kanbanUpdate).catch(() => {});
   }));
+  kanbanIds.forEach(kanbanId => syncInheritedAccessForKanbanId(kanbanId).catch(() => {}));
 }
 
 export async function setFolderMemberRole(
@@ -459,6 +465,7 @@ export async function setFolderMemberRole(
       : { viewerIds: arrayUnion(uid), memberIds: arrayRemove(uid) };
     return updateDoc(doc(db, 'kanbans', kanbanId), kanbanUpdate).catch(() => {});
   }));
+  folder.kanbanIds.forEach(kanbanId => syncInheritedAccessForKanbanId(kanbanId).catch(() => {}));
 }
 
 export async function removeFolderMember(folder: Folder, uid: string): Promise<void> {
@@ -476,6 +483,7 @@ export async function removeFolderMember(folder: Folder, uid: string): Promise<v
       viewerIds: arrayRemove(uid),
     }).catch(() => {}),
   ));
+  folder.kanbanIds.forEach(kanbanId => syncInheritedAccessForKanbanId(kanbanId).catch(() => {}));
 }
 
 export async function generateEditorInvite(folder: Folder): Promise<string> {

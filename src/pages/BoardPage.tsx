@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Popover, Spin, Switch, Badge, Modal, Radio, Select, message, Input, Tooltip } from 'antd';
 import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined, SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import type { KanbanCard, CardAttachment } from '../types';
+import type { KanbanCard, CardAttachment, CardChecklistInstanceRef } from '../types';
 import { saveKanban, deleteKanban, isKanbanOwner, loadUserKanbans, moveCardToKanban, cloneKanban } from '../store';
 import type { Kanban as KanbanType } from '../types';
 import { uploadCardAttachment, deleteCardAttachment, uploadCommentImage } from '../utils/cardAttachments';
@@ -14,6 +14,7 @@ import { getWorkspaceSettings } from '../utils/logoUpload';
 import { buildWildcardMatcher } from '../utils/wildcardSearch';
 import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
 import { getKanbanMembers } from '../utils/kanbanMembers';
+import { markCardInstancesOrphaned, createChecklistInstanceForCard } from '../utils/checklistIntegration';
 import { PillFilterModal } from '../components/PillFilterModal';
 import { useAuth } from '../AuthContext';
 import { ProgressBar } from '../components/ProgressBar';
@@ -146,10 +147,28 @@ export function BoardPage() {
     </div>
   );
 
-  function addCard(card: Omit<KanbanCard, 'id' | 'order'>) {
+  async function addCard(card: Omit<KanbanCard, 'id' | 'order'>) {
     if (!kanban) return;
     const maxOrder = kanban.cards.reduce((m, c) => c.columnId === card.columnId ? Math.max(m, c.order) : m, -1);
-    setKanban({ ...kanban, cards: [...kanban.cards, { ...card, id: crypto.randomUUID(), order: maxOrder + 1, movedAt: Date.now() }] });
+    const newCard: KanbanCard = { ...card, id: crypto.randomUUID(), order: maxOrder + 1, movedAt: Date.now() };
+    setKanban({ ...kanban, cards: [...kanban.cards, newCard] });
+
+    // Simple Checklists integration: any link configured to create an
+    // instance on card creation fires now. A template that's since been
+    // archived/deleted is skipped silently — the card just doesn't get that
+    // checklist rather than blocking creation entirely.
+    const onCreationLinks = (kanban.cardTemplateChecklistLinks ?? []).filter(l => l.trigger.kind === 'onCardCreation');
+    if (onCreationLinks.length === 0 || !user) return;
+    const refs: CardChecklistInstanceRef[] = [];
+    for (const link of onCreationLinks) {
+      try {
+        const instanceId = await createChecklistInstanceForCard(kanban, newCard, link, user.uid, user.email ?? undefined);
+        refs.push({ linkId: link.id, templateId: link.templateId, instanceId });
+      } catch { /* skip */ }
+    }
+    if (refs.length > 0) {
+      setKanban(prev => prev ? { ...prev, cards: prev.cards.map(c => c.id === newCard.id ? { ...c, checklistInstanceRefs: [...(c.checklistInstanceRefs ?? []), ...refs] } : c) } : prev);
+    }
   }
 
   function toggleSelectMode() {
@@ -289,6 +308,8 @@ export function BoardPage() {
 
   function deleteCard(cardId: string) {
     if (!kanban) return;
+    const card = kanban.cards.find(c => c.id === cardId);
+    if (card?.checklistInstanceRefs?.length) markCardInstancesOrphaned(card.checklistInstanceRefs).catch(() => {});
     setKanban({ ...kanban, cards: kanban.cards.filter(c => c.id !== cardId) });
   }
 
@@ -556,6 +577,7 @@ export function BoardPage() {
       </div>
 
       <KanbanBoard
+        kanban={kanban}
         cards={filteredCards}
         columns={kanban.columns}
         onCardsChange={handleCardsChange}

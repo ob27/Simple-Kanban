@@ -5,12 +5,13 @@ import {
   SendOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, MoreOutlined,
   FileOutlined, PaperClipOutlined, SmileOutlined, PictureOutlined, UserOutlined,
 } from '@ant-design/icons';
-import type { KanbanCard, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue } from '../types';
+import type { KanbanCard, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue, CardTemplateChecklistLink } from '../types';
 import type { KanbanMember } from '../utils/kanbanMembers';
 import { UserAvatar } from './UserAvatar';
 import { EmojiPicker } from './EmojiPicker';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
+import { CardChecklistSection } from './CardChecklistSection';
 
 interface CardUpdates {
   title?: string;
@@ -41,6 +42,9 @@ interface Props {
   assignmentDefinitions?: AssignmentDefinition[];
   members?: KanbanMember[];
   onSaveCardAssignment?: (cardId: string, definitionId: string, value: CardAssignmentValue | null) => void;
+  checklistLinks?: CardTemplateChecklistLink[];
+  onCreateChecklistOnDemand?: (link: CardTemplateChecklistLink) => void;
+  creatingChecklistLinkId?: string | null;
 }
 
 function linkify(text: string): ReactNode[] {
@@ -144,6 +148,7 @@ export function CardNotesModal({
   onClose, onSaveCard, onAddComment, onEditComment, onDeleteComment, onToggleReaction,
   onSplitCard, otherKanbans, onMoveOrCopy, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
   assignmentDefinitions, members, onSaveCardAssignment,
+  checklistLinks, onCreateChecklistOnDemand, creatingChecklistLinkId,
 }: Props) {
   const { isMobile } = useBreakpoint();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -393,6 +398,16 @@ export function CardNotesModal({
               })}
             </div>
           </div>
+        )}
+
+        {checklistLinks && checklistLinks.length > 0 && (
+          <CardChecklistSection
+            links={checklistLinks}
+            refs={card.checklistInstanceRefs ?? []}
+            readOnly={readOnly}
+            onCreateOnDemand={link => onCreateChecklistOnDemand?.(link)}
+            creatingLinkId={creatingChecklistLinkId}
+          />
         )}
 
         {/* Attachments */}
