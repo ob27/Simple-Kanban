@@ -13,12 +13,20 @@ import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 // app doesn't use it).
 const useEmulator = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
 
+// Overridable so cross-app emulator testing (Simple-Checklists' e2e suite's
+// Kanban integration spec) can point this app and a sibling app's dev server
+// at the SAME demo project id — the Firestore/Auth emulators isolate data
+// per project id, so two different demo-* ids never see each other's
+// documents, even though production always uses the one real "oestler"
+// project. Falls back to this app's own historical default when unset.
+const emulatorProjectId = import.meta.env.VITE_EMULATOR_PROJECT_ID || 'demo-simple-kanban';
+
 const firebaseConfig = useEmulator
   ? {
       apiKey: 'demo-api-key',
       authDomain: 'localhost',
-      projectId: 'demo-simple-kanban',
-      storageBucket: 'demo-simple-kanban.appspot.com',
+      projectId: emulatorProjectId,
+      storageBucket: `${emulatorProjectId}.appspot.com`,
       messagingSenderId: '000000000000',
       appId: '1:000000000000:web:0000000000000000000000',
     }
