@@ -144,4 +144,7 @@ export interface Kanban {
   assignmentDefinitions?: AssignmentDefinition[];
   showAssignmentsOnCard?: boolean;
   cardTemplateChecklistLinks?: CardTemplateChecklistLink[];
+  // Defaults to 'oldest' (unset) — matches how comments have always
+  // rendered (plain append-order), so existing boards are unaffected.
+  commentSortOrder?: 'newest' | 'oldest';
 }

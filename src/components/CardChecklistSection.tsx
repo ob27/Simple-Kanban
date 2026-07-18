@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button, Spin } from 'antd';
-import { ExportOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Spin, Popover } from 'antd';
+import { InfoCircleOutlined, RightOutlined, PlusOutlined } from '@ant-design/icons';
 import type { CardTemplateChecklistLink, CardChecklistInstanceRef } from '../types';
-import { subscribeInstanceSummary } from '../utils/checklistIntegration';
+import { subscribeInstanceSummary, getTemplateDescription } from '../utils/checklistIntegration';
 import type { SclInstanceSummary } from '../utils/checklistIntegration';
 
 interface Props {
@@ -13,42 +13,102 @@ interface Props {
   creatingLinkId?: string | null;
 }
 
-function LinkedChecklistRow({ instanceId }: { instanceId: string }) {
+function DescriptionInfoButton({ templateId }: { templateId: string }) {
+  const [description, setDescription] = useState<string | null | undefined>(undefined);
+
+  function handleOpenChange(open: boolean) {
+    if (open && description === undefined) {
+      getTemplateDescription(templateId).then(d => setDescription(d || null));
+    }
+  }
+
+  return (
+    <Popover
+      trigger="click"
+      onOpenChange={handleOpenChange}
+      content={<div style={{ maxWidth: 240, fontSize: 12, color: '#555' }}>
+        {description === undefined ? <Spin size="small" /> : description ?? 'No description'}
+      </div>}
+    >
+      <Button
+        type="text" size="small" icon={<InfoCircleOutlined />}
+        style={{ color: '#bbb', width: 20, height: 20, minWidth: 20 }}
+        onClick={e => e.stopPropagation()}
+      />
+    </Popover>
+  );
+}
+
+// A plain two-color "done vs outstanding" bar — Kanban's own ProgressBar.tsx
+// is column-segmented (N colors keyed by ColumnConfig) and isn't a fit for
+// this simpler done/total shape, so this is a small bespoke bar rather than
+// a reuse of that component.
+function ChecklistProgressBar({ completed, total }: { completed: number; total: number }) {
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return (
+    <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: '#eee', flex: 1 }}>
+      <div style={{ flex: `0 0 ${pct}%`, background: '#4A90D9', transition: 'flex 0.3s' }} />
+      <div style={{ flex: `0 0 ${100 - pct}%`, background: '#E2725C', transition: 'flex 0.3s' }} />
+    </div>
+  );
+}
+
+function LinkedChecklistRow({ instanceId, onSummary }: { instanceId: string; onSummary: (instanceId: string, summary: SclInstanceSummary | null) => void }) {
   const [summary, setSummary] = useState<SclInstanceSummary | null | undefined>(undefined);
 
-  useEffect(() => subscribeInstanceSummary(instanceId, setSummary), [instanceId]);
+  useEffect(() => subscribeInstanceSummary(instanceId, s => { setSummary(s); onSummary(instanceId, s); }), [instanceId]);
 
   if (summary === undefined) return <Spin size="small" />;
   if (summary === null || summary.source?.orphaned) {
     return <span style={{ fontSize: 12, color: '#c0392b', fontStyle: 'italic' }}>Checklist removed</span>;
   }
-  const outstanding = summary.totalRequiredCount
-    ? `${(summary.totalRequiredCount ?? 0) - (summary.completedRequiredCount ?? 0)} outstanding`
-    : summary.status;
+
+  const total = summary.totalRequiredCount ?? 0;
+  const completed = summary.completedRequiredCount ?? 0;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary.name}</div>
-        <div style={{ fontSize: 11, color: '#888' }}>{outstanding}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {summary.templateName || summary.name}
+          </span>
+          <DescriptionInfoButton templateId={summary.templateId} />
+          <span style={{ fontSize: 12, color: '#999' }}>{summary.status}</span>
+        </div>
+        {total > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <ChecklistProgressBar completed={completed} total={total} />
+            <span style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{completed}/{total}</span>
+          </div>
+        )}
       </div>
       <Button
-        size="small" icon={<ExportOutlined />}
+        type="text" size="small" icon={<RightOutlined />}
+        style={{ color: '#bbb' }}
         onClick={() => window.open(`/simple-checklists/i/${instanceId}`, '_blank', 'noopener')}
-      >
-        Open
-      </Button>
+      />
     </div>
   );
 }
 
 export function CardChecklistSection({ links, refs, readOnly, onCreateOnDemand, creatingLinkId }: Props) {
+  const [summaries, setSummaries] = useState<Record<string, SclInstanceSummary | null>>({});
+
   if (links.length === 0) return null;
+
+  const resolvedSummaries = Object.values(summaries).filter((s): s is SclInstanceSummary => !!s && !s.source?.orphaned);
+  const completeCount = resolvedSummaries.filter(s => s.status === 'complete').length;
 
   return (
     <div style={{ marginTop: 24 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#999', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
-        Checklists
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#999', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          Checklists
+        </span>
+        {resolvedSummaries.length > 0 && (
+          <span style={{ fontSize: 12, color: '#888' }}>{completeCount} of {resolvedSummaries.length} Complete</span>
+        )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {links.map(link => {
@@ -56,7 +116,7 @@ export function CardChecklistSection({ links, refs, readOnly, onCreateOnDemand, 
           return (
             <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f9f9fb', borderRadius: 8, padding: '8px 12px' }}>
               {ref ? (
-                <LinkedChecklistRow instanceId={ref.instanceId} />
+                <LinkedChecklistRow instanceId={ref.instanceId} onSummary={(id, s) => setSummaries(prev => ({ ...prev, [id]: s }))} />
               ) : (
                 <>
                   <div style={{ flex: 1, fontSize: 13, color: '#888' }}>{link.templateName}</div>

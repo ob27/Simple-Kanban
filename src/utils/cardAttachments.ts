@@ -1,4 +1,4 @@
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { storage, db } from '../firebase';
 import type { Kanban, CardAttachment } from '../types';
@@ -8,11 +8,29 @@ import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES } from '../constants'
 // OTHER owned kanbans (excluding this one) — the account-wide free-tier cap
 // only counts boards the uploader owns, not shared boards owned by someone
 // else, since that storage cost is really attributed to the actual owner.
+// Resumable rather than a plain uploadBytes() so `onProgress` can report
+// real bytesTransferred/totalBytes as the upload streams — previously this
+// was a single fire-and-forget call with zero feedback until the whole
+// thing finished and Firestore's write echoed back through the board's
+// live subscription, which on a slow connection or large file looked
+// exactly like nothing was happening at all.
+function uploadResumable(storageRef: ReturnType<typeof ref>, file: File, onProgress?: (pct: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file);
+    task.on('state_changed',
+      snapshot => onProgress?.(snapshot.totalBytes > 0 ? (snapshot.bytesTransferred / snapshot.totalBytes) * 100 : 0),
+      reject,
+      () => resolve(),
+    );
+  });
+}
+
 export async function uploadCardAttachment(
   kanban: Kanban,
   cardId: string,
   file: File,
   otherOwnedKanbansBytes = 0,
+  onProgress?: (pct: number) => void,
 ): Promise<Kanban> {
   if ((kanban.attachmentsBytes ?? 0) + file.size > MAX_ATTACHMENTS_BYTES) {
     throw new Error('over-kanban-limit');
@@ -23,7 +41,7 @@ export async function uploadCardAttachment(
   const attachmentId = crypto.randomUUID();
   const path = `cardAttachments/${kanban.id}/${cardId}/${attachmentId}-${file.name}`;
   const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
+  await uploadResumable(storageRef, file, onProgress);
   const url = await getDownloadURL(storageRef);
   const attachment: CardAttachment = { id: attachmentId, name: file.name, url, path, size: file.size, type: file.type };
   const updated: Kanban = {

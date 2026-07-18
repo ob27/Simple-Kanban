@@ -41,6 +41,8 @@ interface SclTemplateVersionSummary {
 
 export interface SclInstanceSummary {
   id: string;
+  templateId: string;
+  templateName: string;
   name: string;
   status: 'open' | 'complete' | 'closed';
   completedRequiredCount?: number;
@@ -83,6 +85,19 @@ export function subscribeInstanceSummary(instanceId: string, onChange: (summary:
   return onSnapshot(doc(db, 'sclInstances', instanceId), snap => {
     onChange(snap.exists() ? ({ id: snap.id, ...(snap.data() as object) } as SclInstanceSummary) : null);
   });
+}
+
+// One-time (not live) fetch, called lazily when a card's info icon is
+// clicked — a plain description is rarely-viewed and never changes while
+// the popover is open, so a live subscription would be pure overhead.
+// Deliberately NOT denormalized onto the instance at creation time (unlike
+// templateName): a description can be edited on the template after
+// instances already exist, and staleness here would be actively misleading
+// rather than just a cosmetic rename lag.
+export async function getTemplateDescription(templateId: string): Promise<string | undefined> {
+  const snap = await getDoc(doc(db, 'sclTemplates', templateId));
+  if (!snap.exists()) return undefined;
+  return (snap.data() as { description?: string }).description;
 }
 
 function requiredComponentCount(items: SclCheckItem[]): number {

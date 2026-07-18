@@ -24,12 +24,13 @@ interface Props {
   assignmentDefinitions?: AssignmentDefinition[];
   showAssignmentsOnCard?: boolean;
   memberEmailByUid?: Record<string, string>;
+  memberDisplayNameByUid?: Record<string, string>;
 }
 
 export function KanbanColumn({
   config, cards, onDeleteCard, onOpenNotes, minWidth, cardFontSize, wrapCardText, isViewer, maxCards,
   showStoryPoints, staleAfterDays, selectMode, selectedCardIds, onToggleSelect,
-  assignmentDefinitions, showAssignmentsOnCard, memberEmailByUid,
+  assignmentDefinitions, showAssignmentsOnCard, memberEmailByUid, memberDisplayNameByUid,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: config.id });
   const visibleCards = maxCards ? cards.slice(0, maxCards) : cards;
@@ -100,6 +101,7 @@ export function KanbanColumn({
               assignmentDefinitions={assignmentDefinitions}
               showAssignmentsOnCard={showAssignmentsOnCard}
               memberEmailByUid={memberEmailByUid}
+              memberDisplayNameByUid={memberDisplayNameByUid}
             />
           ))}
         </SortableContext>

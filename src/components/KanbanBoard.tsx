@@ -17,6 +17,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useAuth } from '../AuthContext';
 import { deleteCommentImageFile } from '../utils/cardAttachments';
 import { createChecklistInstanceForCard } from '../utils/checklistIntegration';
+import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
 
 interface Props {
   kanban: Kanban;
@@ -37,7 +38,7 @@ interface Props {
   onSplitCard?: (cardId: string, titles: string[]) => void;
   otherKanbans?: Kanban[];
   onMoveOrCopyCard?: (card: KanbanCard, targetKanbanId: string, mode: 'move' | 'copy') => void;
-  onUploadAttachment?: (cardId: string, file: File) => void;
+  onUploadAttachment?: (cardId: string, file: File, onProgress?: (pct: number) => void) => Promise<void> | void;
   onDeleteAttachment?: (cardId: string, attachment: CardAttachment) => void;
   onUploadCommentImage?: (cardId: string, file: File) => Promise<{ url: string; path: string; size: number } | null>;
   assignmentDefinitions?: AssignmentDefinition[];
@@ -75,6 +76,10 @@ export function KanbanBoard({
   const { isMobile, isTablet } = useBreakpoint();
   const { user } = useAuth();
   const memberEmailByUid = Object.fromEntries((members ?? []).map(m => [m.uid, m.email]));
+  const memberProfiles = useUserProfiles((members ?? []).map(m => m.uid));
+  const memberDisplayNameByUid = Object.fromEntries(
+    (members ?? []).map(m => [m.uid, resolveDisplay(m.uid, m.email, memberProfiles).name]),
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: isViewer ? 999999 : 8 } }),
@@ -289,6 +294,7 @@ export function KanbanBoard({
               assignmentDefinitions={assignmentDefinitions}
               showAssignmentsOnCard={showAssignmentsOnCard}
               memberEmailByUid={memberEmailByUid}
+              memberDisplayNameByUid={memberDisplayNameByUid}
             />
           ))}
         </div>
@@ -323,13 +329,14 @@ export function KanbanBoard({
           onSplitCard={onSplitCard ? titles => { onSplitCard(notesCard.id, titles); setNotesCardId(null); } : undefined}
           otherKanbans={otherKanbans}
           onMoveOrCopy={onMoveOrCopyCard ? (targetId, mode) => { onMoveOrCopyCard(notesCard, targetId, mode); setNotesCardId(null); } : undefined}
-          onUploadAttachment={onUploadAttachment ? file => onUploadAttachment(notesCard.id, file) : undefined}
+          onUploadAttachment={onUploadAttachment ? (file, onProgress) => onUploadAttachment(notesCard.id, file, onProgress) : undefined}
           onDeleteAttachment={onDeleteAttachment ? attachment => onDeleteAttachment(notesCard.id, attachment) : undefined}
           onUploadCommentImage={onUploadCommentImage ? file => onUploadCommentImage(notesCard.id, file) : undefined}
           onToggleReaction={(commentId, emoji) => handleToggleReaction(notesCard.id, commentId, emoji)}
           assignmentDefinitions={assignmentDefinitions}
           members={members}
           onSaveCardAssignment={handleSaveCardAssignment}
+          commentSortOrder={kanban.commentSortOrder}
           checklistLinks={kanban.cardTemplateChecklistLinks}
           onCreateChecklistOnDemand={handleCreateChecklistOnDemand}
           creatingChecklistLinkId={creatingChecklistLinkId}

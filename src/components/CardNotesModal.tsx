@@ -36,12 +36,13 @@ interface Props {
   onSplitCard?: (titles: string[]) => void;
   otherKanbans?: Kanban[];
   onMoveOrCopy?: (targetKanbanId: string, mode: 'move' | 'copy') => void;
-  onUploadAttachment?: (file: File) => void;
+  onUploadAttachment?: (file: File, onProgress?: (pct: number) => void) => Promise<void> | void;
   onDeleteAttachment?: (attachment: CardAttachment) => void;
   onUploadCommentImage?: (file: File) => Promise<{ url: string; path: string; size: number } | null>;
   assignmentDefinitions?: AssignmentDefinition[];
   members?: KanbanMember[];
   onSaveCardAssignment?: (cardId: string, definitionId: string, value: CardAssignmentValue | null) => void;
+  commentSortOrder?: 'newest' | 'oldest';
   checklistLinks?: CardTemplateChecklistLink[];
   onCreateChecklistOnDemand?: (link: CardTemplateChecklistLink) => void;
   creatingChecklistLinkId?: string | null;
@@ -102,11 +103,31 @@ function AssignmentRow({ label, value, members, readOnly, onChange }: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>{label}</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 13, color: '#555', minWidth: 120, fontWeight: 600 }}>{label}</span>
+        {mode === 'member' ? (
+          <Select
+            style={{ flex: 1 }}
+            showSearch
+            allowClear
+            placeholder="Assign a board member…"
+            value={value?.kind === 'member' ? value.uid : undefined}
+            optionFilterProp="label"
+            onChange={uid => onChange(uid ? { kind: 'member', uid } : null)}
+            options={members.map(m => ({ value: m.uid, label: m.email || m.uid }))}
+          />
+        ) : (
+          <Input
+            style={{ flex: 1 }}
+            placeholder="Name of someone without an account yet…"
+            value={freeTextDraft}
+            onChange={e => setFreeTextDraft(e.target.value)}
+            onBlur={() => onChange(freeTextDraft.trim() ? { kind: 'freeText', text: freeTextDraft.trim() } : null)}
+            onPressEnter={e => (e.currentTarget as HTMLInputElement).blur()}
+          />
+        )}
         <Segmented
-          size="small"
           value={mode}
           onChange={v => setMode(v as 'member' | 'freeText')}
           options={[
@@ -118,27 +139,6 @@ function AssignmentRow({ label, value, members, readOnly, onChange }: {
           <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => onChange(null)} />
         )}
       </div>
-      {mode === 'member' ? (
-        <Select
-          size="small"
-          showSearch
-          allowClear
-          placeholder="Assign a board member…"
-          value={value?.kind === 'member' ? value.uid : undefined}
-          optionFilterProp="label"
-          onChange={uid => onChange(uid ? { kind: 'member', uid } : null)}
-          options={members.map(m => ({ value: m.uid, label: m.email || m.uid }))}
-        />
-      ) : (
-        <Input
-          size="small"
-          placeholder="Name of someone without an account yet…"
-          value={freeTextDraft}
-          onChange={e => setFreeTextDraft(e.target.value)}
-          onBlur={() => onChange(freeTextDraft.trim() ? { kind: 'freeText', text: freeTextDraft.trim() } : null)}
-          onPressEnter={e => (e.currentTarget as HTMLInputElement).blur()}
-        />
-      )}
     </div>
   );
 }
@@ -147,19 +147,25 @@ export function CardNotesModal({
   card, columnColor, currentUser, canDeleteAnyComment, readOnly, showStoryPoints,
   onClose, onSaveCard, onAddComment, onEditComment, onDeleteComment, onToggleReaction,
   onSplitCard, otherKanbans, onMoveOrCopy, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
-  assignmentDefinitions, members, onSaveCardAssignment,
+  assignmentDefinitions, members, onSaveCardAssignment, commentSortOrder,
   checklistLinks, onCreateChecklistOnDemand, creatingChecklistLinkId,
 }: Props) {
   const { isMobile } = useBreakpoint();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentImageInputRef = useRef<HTMLInputElement>(null);
   const attachments: CardAttachment[] = card.attachments ?? [];
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
-    onUploadAttachment?.(file);
+    if (!file || !onUploadAttachment) return;
+    setUploadProgress(0);
+    try {
+      await onUploadAttachment(file, setUploadProgress);
+    } finally {
+      setUploadProgress(null);
+    }
   }
   const [titleValue, setTitleValue] = useState(card.title);
   const [pillValue, setPillValue] = useState(card.pillValue ?? '');
@@ -176,7 +182,12 @@ export function CardNotesModal({
   const [splitTitles, setSplitTitles] = useState<string[]>(['', '']);
   const [moveMode, setMoveMode] = useState<'move' | 'copy' | null>(null);
   const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
-  const comments: CardComment[] = card.comments ?? [];
+  // Stored append-order (oldest first) regardless of setting — sort here,
+  // at render time, rather than reordering the underlying array, so
+  // switching the setting later doesn't need a data migration.
+  const comments: CardComment[] = commentSortOrder === 'newest'
+    ? [...(card.comments ?? [])].reverse()
+    : (card.comments ?? []);
   const commentProfiles = useUserProfiles([...comments.map(c => c.uid), currentUser.uid]);
 
   function handleTitleBlur() {
@@ -458,9 +469,18 @@ export function CardNotesModal({
             {!readOnly && onUploadAttachment && (
               <>
                 <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChange} />
-                <Button size="small" icon={<PaperClipOutlined />} onClick={() => fileInputRef.current?.click()}>
-                  Add attachment
-                </Button>
+                {uploadProgress === null ? (
+                  <Button size="small" icon={<PaperClipOutlined />} onClick={() => fileInputRef.current?.click()}>
+                    Add attachment
+                  </Button>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 220 }}>
+                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#eee', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.round(uploadProgress)}%`, height: '100%', background: '#1677ff', transition: 'width 0.15s' }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{Math.round(uploadProgress)}%</span>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -497,8 +517,19 @@ export function CardNotesModal({
                       <span style={{ fontSize: 12, fontWeight: 600, color: '#444' }}>{display.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span style={{ fontSize: 11, color: '#bbb' }}>{relativeTime(c.createdAt)}</span>
-                        {(canEdit || canDelete) && (isHovered || isEditing) && !isEditing && (
-                          <div style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
+                        {(canEdit || canDelete) && !isEditing && (
+                          // Always mounted (never conditionally unmounted on
+                          // hover) — the delete Popconfirm's popup portals to
+                          // document.body, outside this row's own bounding
+                          // box, so moving the mouse toward it used to cross
+                          // the row's edge and fire onMouseLeave, which
+                          // unmounted this whole block (Popconfirm included)
+                          // before the click could land. Opacity-only
+                          // visibility, matching KanbanCard.tsx's own
+                          // hover-affordance convention, keeps the button
+                          // (and any open Popconfirm) alive regardless of
+                          // where the mouse currently is.
+                          <div style={{ display: 'flex', gap: 2, marginLeft: 4, opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? 'auto' : 'none', transition: 'opacity 0.1s' }}>
                             {canEdit && (
                               <button
                                 onClick={() => startEditComment(c)}

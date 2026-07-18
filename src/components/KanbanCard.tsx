@@ -25,6 +25,7 @@ interface Props {
   assignmentDefinitions?: { id: string; label: string }[];
   showAssignmentsOnCard?: boolean;
   memberEmailByUid?: Record<string, string>;
+  memberDisplayNameByUid?: Record<string, string>;
 }
 
 const LONG_PRESS_DELAY = 380;
@@ -33,7 +34,7 @@ const DOUBLE_TAP_MS = 300;
 export function KanbanCard({
   card, columnColor, onDelete, onOpenNotes, cardFontSize, wrapCardText = false, isOverlay = false, isViewer = false,
   showStoryPoints = false, staleAfterDays, selectMode = false, selected = false, onToggleSelect,
-  assignmentDefinitions, showAssignmentsOnCard = false, memberEmailByUid,
+  assignmentDefinitions, showAssignmentsOnCard = false, memberEmailByUid, memberDisplayNameByUid,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id, disabled: selectMode });
 
@@ -276,11 +277,12 @@ export function KanbanCard({
             {assignmentDefinitions!.map(def => {
               const val = card.cardAssignments?.[def.id];
               if (!val) return null;
-              const displayText = val.kind === 'member' ? (memberEmailByUid?.[val.uid] ?? val.uid) : val.text;
+              const memberEmail = val.kind === 'member' ? (memberEmailByUid?.[val.uid] ?? val.uid) : undefined;
+              const displayText = val.kind === 'member' ? (memberDisplayNameByUid?.[val.uid] || memberEmail) : val.text;
               return (
                 <div key={def.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, lineHeight: 1.3 }}>
                   <span style={{ fontWeight: 700, color: '#999' }}>{def.label}:</span>
-                  {val.kind === 'member' && <UserAvatar email={displayText} size={14} />}
+                  {val.kind === 'member' && <UserAvatar email={memberEmail!} size={14} />}
                   <span style={{ color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayText}</span>
                 </div>
               );

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Drawer, Button, Input, Form, InputNumber, Popconfirm, message, Select, Tooltip, Switch } from 'antd';
+import { Drawer, Button, Input, Form, InputNumber, Popconfirm, message, Select, Tooltip, Switch, Popover } from 'antd';
 const { TextArea } = Input;
-import { CopyOutlined, ReloadOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, PrinterOutlined } from '@ant-design/icons';
+import { CopyOutlined, ReloadOutlined, DeleteOutlined, DownloadOutlined, UploadOutlined, PrinterOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import type { Kanban, AssignmentDefinition, CardTemplateChecklistLink } from '../types';
 import { regenerateInvite } from '../store';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -31,6 +31,38 @@ interface Props {
   onDuplicate: () => void;
   folderLogoUrl?: string | null;
   accountAttachmentsBytes?: number;
+}
+
+// A live example of exactly what a stale/very-stale card actually looks
+// like (same emoji + same kc-smoke/kc-flame keyframes as the real card face
+// in KanbanCard.tsx) — "stale" isn't a self-explanatory word on its own, so
+// people were reasonably reluctant to turn a setting on without knowing
+// what it would visibly do to their board.
+function StaleExampleCard({ label, emoji, style }: { label: string; emoji: string; style: React.CSSProperties }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <div style={{ position: 'relative', width: 84, height: 40, background: '#fff', border: '1px solid #eee', borderRadius: 6, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+        <div style={{ position: 'absolute', top: -6, right: 6 }}>
+          <span style={{ fontSize: 14, display: 'inline-block', ...style }}>{emoji}</span>
+        </div>
+      </div>
+      <span style={{ fontSize: 11, color: '#999' }}>{label}</span>
+    </div>
+  );
+}
+
+function StaleExamplePopoverContent() {
+  return (
+    <div style={{ maxWidth: 240 }}>
+      <div style={{ fontSize: 12, color: '#555', marginBottom: 10 }}>
+        A card that hasn't moved in the given number of days gets a small animated icon in its corner — nothing else changes.
+      </div>
+      <div style={{ display: 'flex', gap: 20, justifyContent: 'center' }}>
+        <StaleExampleCard label="Stale" emoji="💨" style={{ opacity: 0.5, animation: 'kc-smoke 2.4s ease-in infinite' }} />
+        <StaleExampleCard label="Very stale (2×)" emoji="🔥" style={{ animation: 'kc-flame 0.6s ease-in-out infinite', filter: 'drop-shadow(0 0 4px rgba(255,120,0,0.8))' }} />
+      </div>
+    </div>
+  );
 }
 
 export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onExportCSV, onPrintReport, onDuplicate, folderLogoUrl, accountAttachmentsBytes }: Props) {
@@ -78,6 +110,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         showStoryPoints: kanban.showStoryPoints ?? false,
         showAssignmentsOnCard: kanban.showAssignmentsOnCard ?? false,
         accoladesEnabled: kanban.accoladesEnabled ?? true,
+        commentSortOrder: kanban.commentSortOrder ?? 'oldest',
         ...Object.fromEntries(kanban.columns.map((c, i) => [`col_${i}`, c.label])),
       });
     }
@@ -125,6 +158,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       showStoryPoints: vals.showStoryPoints as boolean,
       showAssignmentsOnCard: vals.showAssignmentsOnCard as boolean,
       accoladesEnabled: vals.accoladesEnabled as boolean,
+      commentSortOrder: vals.commentSortOrder as 'newest' | 'oldest',
       staleAfterDays: staleAfterDaysValue,
       columns: updatedColumns,
       assignmentDefinitions: cleanedAssignmentDefs.length ? cleanedAssignmentDefs : undefined,
@@ -171,7 +205,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </Form.Item>
 
         {/* Columns */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555' }}>Columns</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Columns</div>
         {kanban.columns.map((col, i) => (
           <div key={col.id} style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -243,7 +277,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         ))}
 
         {/* Column roles */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Column roles</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Column roles</div>
         <div style={{ marginBottom: 8, fontSize: 12, color: '#999' }}>Used to calculate groomed % and complete %</div>
         {(['backlogColumnId', 'groomedColumnId', 'doneColumnId'] as const).map((field, i) => (
           <Form.Item key={field} name={field} label={['Backlog', 'Groomed', 'Done'][i]} style={{ marginBottom: 10 }}>
@@ -252,7 +286,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         ))}
 
         {/* Assignments */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Assignments</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Assignments</div>
         <div style={{ marginBottom: 8, fontSize: 12, color: '#999' }}>
           Define up to {MAX_ASSIGNMENT_DEFINITIONS} responsibility labels (e.g. &quot;Asset Manager&quot;) that can be assigned per card.
         </div>
@@ -282,10 +316,12 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Simple Checklists integration */}
-        <ChecklistLinksSection links={checklistLinks} columns={kanban.columns} onChange={setChecklistLinks} />
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+          <ChecklistLinksSection links={checklistLinks} columns={kanban.columns} onChange={setChecklistLinks} />
+        </div>
 
         {/* Visibility */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Board sections</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Board sections</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Form.Item name="showProgressBar" valuePropName="checked" noStyle>
@@ -365,7 +401,12 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Stale cards */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Card staleness</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+          <span style={{ fontWeight: 600, fontSize: 13, color: '#555' }}>Card staleness</span>
+          <Popover content={<StaleExamplePopoverContent />} trigger="click" placement="right">
+            <InfoCircleOutlined style={{ color: '#bbb', cursor: 'pointer', fontSize: 13 }} />
+          </Popover>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Switch
             size="small"
@@ -388,7 +429,8 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Kanban logo upload */}
-        <div style={{ marginTop: 10, marginBottom: 8 }}>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0', marginBottom: 8 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 8 }}>Kanban logo</div>
           <div style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>
             Upload a logo specific to this kanban. Appears above the progress bar when &quot;Show kanban logo&quot; is on.
           </div>
@@ -450,7 +492,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Card font size */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Card title size</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Card title size</div>
         <Form.Item name="cardFontSize" style={{ marginBottom: 10 }}>
           <Select
             options={[
@@ -469,8 +511,19 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
           <span style={{ fontSize: 13, color: '#555' }}>Wrap card text</span>
         </div>
 
+        {/* Comments */}
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Comments</div>
+        <Form.Item name="commentSortOrder" label="Sort order on cards" style={{ marginBottom: 10 }}>
+          <Select
+            options={[
+              { value: 'oldest', label: 'Oldest first' },
+              { value: 'newest', label: 'Newest first' },
+            ]}
+          />
+        </Form.Item>
+
         {/* Timeline */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 16 }}>Timeline</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Timeline</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Form.Item name="projectStartMonth" label="Start month">
             <Select options={MONTH_OPTIONS} />
@@ -492,7 +545,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </Form.Item>
 
         {/* Invite */}
-        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 8 }}>Invite link</div>
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Invite link</div>
         <div style={{
           background: '#f5f5f5', borderRadius: 8, padding: '10px 12px',
           fontSize: 12, color: '#555', wordBreak: 'break-all', marginBottom: 8,
@@ -507,7 +560,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Export */}
-        <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 8 }}>Export</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button icon={<DownloadOutlined />} block onClick={onExportCSV}>
@@ -520,7 +573,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Storage */}
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 4 }}>Attachment storage</div>
           <div style={{ fontSize: 12, color: '#999' }}>
             {formatBytes(kanban.attachmentsBytes ?? 0)} of {formatBytes(MAX_ATTACHMENTS_BYTES)} used on this board
@@ -533,7 +586,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         </div>
 
         {/* Duplicate */}
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
           <Button icon={<CopyOutlined />} block onClick={onDuplicate}>
             Duplicate this kanban
           </Button>

@@ -15,7 +15,7 @@ import { buildWildcardMatcher } from '../utils/wildcardSearch';
 import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
 import { getKanbanMembers } from '../utils/kanbanMembers';
 import { markCardInstancesOrphaned, createChecklistInstanceForCard } from '../utils/checklistIntegration';
-import { PillFilterModal } from '../components/PillFilterModal';
+import { CardFilterModal, pillFilterKey, assignmentFilterKey } from '../components/CardFilterModal';
 import { useAuth } from '../AuthContext';
 import { ProgressBar } from '../components/ProgressBar';
 import { ProjectLifeline } from '../components/ProjectLifeline';
@@ -38,7 +38,7 @@ export function BoardPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [folderLogoUrl, setFolderLogoUrl] = useState<string | null>(null);
-  const [pillFilter, setPillFilter] = useState<Set<string>>(new Set());
+  const [cardFilter, setCardFilter] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [folderAccoladesEnabled, setFolderAccoladesEnabled] = useState<boolean | undefined>(undefined);
   const [workspaceAccoladesEnabled, setWorkspaceAccoladesEnabled] = useState<boolean | undefined>(undefined);
@@ -57,6 +57,9 @@ export function BoardPage() {
   const boardMemberUids = kanban ? Array.from(new Set([kanban.ownerId, ...(kanban.coOwnerIds ?? []), ...kanban.memberIds])) : [];
   const boardMemberProfiles = useUserProfiles(kanban ? [...boardMemberUids, kanban.ownerId] : []);
   const boardMembers = kanban && user ? getKanbanMembers(kanban, user.uid, user.email ?? '') : [];
+  const memberDisplayNameByUid = Object.fromEntries(
+    boardMembers.map(m => [m.uid, resolveDisplay(m.uid, m.email, boardMemberProfiles).name]),
+  );
 
   const totalCardCount = kanban ? kanban.cards.length : 0;
   const effectiveTotal = kanban
@@ -66,16 +69,30 @@ export function BoardPage() {
   const uniquePillValues = kanban
     ? [...new Set(kanban.cards.map(c => c.pillValue).filter((v): v is string => !!v))]
     : [];
-  const pillFilteredCards = kanban && pillFilter.size > 0
-    ? kanban.cards.filter(c => c.pillValue && pillFilter.has(c.pillValue))
+  const hasAnyAssignmentValues = !!kanban?.cards.some(c => c.cardAssignments && Object.keys(c.cardAssignments).length > 0);
+  // A card matches if ANY selected filter entry (pill or assignment, mixed
+  // freely in one Set via composite keys) matches it — OR semantics across
+  // the whole selection, same as the pill-only filter always had.
+  function cardMatchesFilter(card: KanbanCard): boolean {
+    if (card.pillValue && cardFilter.has(pillFilterKey(card.pillValue))) return true;
+    if (card.cardAssignments) {
+      for (const [defId, val] of Object.entries(card.cardAssignments)) {
+        const valueKey = val.kind === 'member' ? val.uid : `text:${val.text}`;
+        if (cardFilter.has(assignmentFilterKey(defId, valueKey))) return true;
+      }
+    }
+    return false;
+  }
+  const cardFilteredCards = kanban && cardFilter.size > 0
+    ? kanban.cards.filter(cardMatchesFilter)
     : kanban?.cards ?? [];
   const searchTerm = cardSearch.trim();
   const searchMatcher = searchTerm ? buildWildcardMatcher(searchTerm) : null;
   const filteredCards = searchMatcher
-    ? pillFilteredCards.filter(c =>
+    ? cardFilteredCards.filter(c =>
         searchMatcher(c.title) || searchMatcher(c.notes ?? '') || searchMatcher(c.pillValue ?? '')
         || (c.comments ?? []).some(comment => searchMatcher(comment.text)))
-    : pillFilteredCards;
+    : cardFilteredCards;
 
   // Account-wide attachment usage — only counts boards the user owns, since
   // a shared board's storage cost is attributed to its actual owner, not
@@ -262,10 +279,10 @@ export function BoardPage() {
     }
   }
 
-  async function handleUploadAttachment(cardId: string, file: File) {
+  async function handleUploadAttachment(cardId: string, file: File, onProgress?: (pct: number) => void) {
     if (!kanban) return;
     try {
-      await uploadCardAttachment(kanban, cardId, file, otherOwnedKanbansBytes);
+      await uploadCardAttachment(kanban, cardId, file, otherOwnedKanbansBytes, onProgress);
     } catch (err) {
       if (err instanceof Error && err.message === 'over-kanban-limit') {
         message.error(`This board has used ${formatBytes(kanban.attachmentsBytes ?? 0)} of ${formatBytes(MAX_ATTACHMENTS_BYTES)} — delete an attachment to free up space`);
@@ -322,12 +339,12 @@ export function BoardPage() {
     // above), so any interaction there — drag reorder, reactions, comments —
     // reports back a `newCards` array scoped to whatever's currently visible.
     // Text search narrows visibility exactly like the pill filter does, so it
-    // has to be checked here too — this used to only test `pillFilter.size`,
+    // has to be checked here too — this used to only test `cardFilter.size`,
     // which meant searching for a card and then dragging/reacting/commenting
     // on it silently replaced the whole board with just the search-matched
     // cards, and the very next autosave wrote that truncated set to Firestore,
     // permanently deleting every card the search had hidden.
-    if (pillFilter.size === 0 && !searchTerm) {
+    if (cardFilter.size === 0 && !searchTerm) {
       setKanban({ ...kanban, cards: newCards, attachmentsBytes });
       return;
     }
@@ -492,7 +509,7 @@ export function BoardPage() {
         <ProgressBar
           cards={filteredCards}
           columns={kanban.columns}
-          totalEstimated={pillFilter.size > 0 ? filteredCards.length : effectiveTotal}
+          totalEstimated={cardFilter.size > 0 ? filteredCards.length : effectiveTotal}
           doneColumnId={kanban.doneColumnId}
           groomedColumnId={kanban.groomedColumnId}
         />
@@ -522,7 +539,7 @@ export function BoardPage() {
                   {kanban.name}
                 </span>
                 <span style={{ fontSize: 'clamp(12px, 1.1vw, 16px)', fontWeight: 400, color: '#666', lineHeight: 1 }}>
-                  {pillFilter.size > 0 || searchTerm
+                  {cardFilter.size > 0 || searchTerm
                     ? `${filteredCards.length} of ${kanban.cards.length} cards`
                     : `${kanban.cards.length} of ${effectiveTotal} cards`}
                 </span>
@@ -549,14 +566,14 @@ export function BoardPage() {
               {!isMobile && 'Select'}
             </Button>
           )}
-          {uniquePillValues.length > 0 && (
-            <Badge count={pillFilter.size} size="small" offset={[-4, 4]}>
+          {(uniquePillValues.length > 0 || hasAnyAssignmentValues) && (
+            <Badge count={cardFilter.size} size="small" offset={[-4, 4]}>
               <Button
                 icon={<FilterOutlined />}
                 size="small"
-                type={pillFilter.size > 0 ? 'primary' : 'text'}
+                type={cardFilter.size > 0 ? 'primary' : 'text'}
                 onClick={() => setFilterOpen(true)}
-                style={pillFilter.size === 0 ? { color: '#666' } : undefined}
+                style={cardFilter.size === 0 ? { color: '#666' } : undefined}
               >
                 {!isMobile && 'Filter'}
               </Button>
@@ -680,11 +697,13 @@ export function BoardPage() {
         />
       )}
 
-      <PillFilterModal
+      <CardFilterModal
         open={filterOpen}
         cards={kanban.cards}
-        activeFilter={pillFilter}
-        onFilterChange={setPillFilter}
+        assignmentDefinitions={kanban.assignmentDefinitions}
+        memberDisplayNameByUid={memberDisplayNameByUid}
+        activeFilter={cardFilter}
+        onFilterChange={setCardFilter}
         onClose={() => setFilterOpen(false)}
       />
 

@@ -53,8 +53,11 @@ export function ChecklistLinksSection({ links, columns, onChange }: Props) {
     setPickColumnId(undefined);
   }
 
-  const linkedTemplateIds = new Set(links.map(l => l.templateId));
-  const pickableTemplates = availableTemplates.filter(t => !linkedTemplateIds.has(t.id));
+  // Deliberately NOT filtering out already-linked templates — a card can
+  // have more than one independent tracked instance of the SAME template
+  // (each link gets its own id, so this is already what the data model
+  // supports; the picker was the only thing stopping it).
+  const pickableTemplates = availableTemplates;
 
   return (
     <div style={{ marginBottom: 8 }}>
