@@ -18,6 +18,7 @@ import { useAuth } from '../AuthContext';
 import { deleteCommentImageFile } from '../utils/cardAttachments';
 import { createChecklistInstanceForCard } from '../utils/checklistIntegration';
 import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
+import { logKanbanEvent } from '../utils/kanbanEvents';
 
 interface Props {
   kanban: Kanban;
@@ -44,6 +45,7 @@ interface Props {
   assignmentDefinitions?: AssignmentDefinition[];
   showAssignmentsOnCard?: boolean;
   members?: KanbanMember[];
+  onViewCardHistory?: (cardId: string) => void;
 }
 
 function burstConfetti(colors: string[]) {
@@ -68,7 +70,7 @@ export function KanbanBoard({
   kanban, cards, columns, onCardsChange, onDeleteCard, cardFontSize, wrapCardText, isOwner, isViewer,
   showStoryPoints, staleAfterDays, accoladesEnabled = true, selectMode, selectedCardIds, onToggleSelect,
   onSplitCard, otherKanbans, onMoveOrCopyCard, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
-  assignmentDefinitions, showAssignmentsOnCard, members,
+  assignmentDefinitions, showAssignmentsOnCard, members, onViewCardHistory,
 }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
@@ -137,6 +139,17 @@ export function KanbanBoard({
         newCards.splice(overIdx + 1, 0, moved);
       }
       onCardsChange(newCards);
+      if (user) {
+        logKanbanEvent({
+          kanbanId: kanban.id, cardId: moved.id, cardTitle: moved.title, type: 'card.movedColumn',
+          actorUid: user.uid, actorEmail: user.email,
+          detail: {
+            fromColumnId: dragged.columnId, toColumnId: targetColumnId,
+            fromColumnLabel: columns.find(c => c.id === dragged.columnId)?.label ?? dragged.columnId,
+            toColumnLabel: columns.find(c => c.id === targetColumnId)?.label ?? targetColumnId,
+          },
+        });
+      }
 
       if (movingRight && accoladesEnabled) {
         message.success({ content: getRandomAffirmation(), duration: 3, style: { fontSize: 'clamp(14px, 1.4vw, 19px)', fontWeight: 600 } });
@@ -162,6 +175,11 @@ export function KanbanBoard({
             try {
               const instanceId = await createChecklistInstanceForCard(kanban, moved, link, user.uid, user.email ?? undefined);
               refs.push({ linkId: link.id, templateId: link.templateId, instanceId });
+              logKanbanEvent({
+                kanbanId: kanban.id, cardId: moved.id, cardTitle: moved.title, type: 'checklist.linked',
+                actorUid: user.uid, actorEmail: user.email,
+                detail: { linkId: link.id, templateId: link.templateId, templateName: link.templateName, trigger: link.trigger.kind },
+              });
             } catch { /* template since archived/deleted — skip */ }
           }
           if (refs.length > 0) {
@@ -173,6 +191,7 @@ export function KanbanBoard({
   }
 
   function handleSaveCard(cardId: string, updates: { title?: string; pillValue?: string; notes?: string; storyPoints?: number | null }) {
+    const current = cards.find(c => c.id === cardId);
     onCardsChange(cards.map(c => {
       if (c.id !== cardId) return c;
       const { storyPoints, ...rest } = updates;
@@ -180,6 +199,21 @@ export function KanbanBoard({
       if (storyPoints !== undefined) next.storyPoints = storyPoints === null ? undefined : storyPoints;
       return next;
     }));
+    if (current && user) {
+      const truncate = (s: string) => s.length > 300 ? `${s.slice(0, 300)}…` : s;
+      if (updates.title !== undefined && updates.title !== current.title) {
+        logKanbanEvent({ kanbanId: kanban.id, cardId, cardTitle: updates.title, type: 'card.titleEdited', actorUid: user.uid, actorEmail: user.email, detail: { field: 'title', oldValue: current.title, newValue: updates.title } });
+      }
+      if (updates.notes !== undefined && updates.notes !== (current.notes ?? '')) {
+        logKanbanEvent({ kanbanId: kanban.id, cardId, cardTitle: current.title, type: 'card.notesEdited', actorUid: user.uid, actorEmail: user.email, detail: { field: 'notes', oldValue: truncate(current.notes ?? ''), newValue: truncate(updates.notes) } });
+      }
+      if (updates.pillValue !== undefined && updates.pillValue !== current.pillValue) {
+        logKanbanEvent({ kanbanId: kanban.id, cardId, cardTitle: current.title, type: 'card.pillEdited', actorUid: user.uid, actorEmail: user.email, detail: { field: 'pillValue', oldValue: current.pillValue, newValue: updates.pillValue } });
+      }
+      if (updates.storyPoints !== undefined && (updates.storyPoints ?? undefined) !== current.storyPoints) {
+        logKanbanEvent({ kanbanId: kanban.id, cardId, cardTitle: current.title, type: 'card.storyPointsEdited', actorUid: user.uid, actorEmail: user.email, detail: { field: 'storyPoints', oldValue: current.storyPoints ?? null, newValue: updates.storyPoints } });
+      }
+    }
   }
 
   function handleAddComment(cardId: string, text: string, image?: { url: string; path: string; size: number }) {
@@ -200,6 +234,14 @@ export function KanbanBoard({
         ? { ...c, comments: [...(c.comments ?? []), comment] }
         : c
     ), image?.size ?? 0);
+    const card = cards.find(c => c.id === cardId);
+    if (user) {
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId, cardTitle: card?.title ?? null, type: 'comment.added',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { commentId: comment.id, textSnippet: text.length > 120 ? `${text.slice(0, 120)}…` : text },
+      });
+    }
   }
 
   function handleToggleReaction(cardId: string, commentId: string, emoji: string) {
@@ -228,6 +270,14 @@ export function KanbanBoard({
         ? { ...c, comments: (c.comments ?? []).map(cm => cm.id === commentId ? { ...cm, text } : cm) }
         : c
     ));
+    const card = cards.find(c => c.id === cardId);
+    if (user) {
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId, cardTitle: card?.title ?? null, type: 'comment.edited',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { commentId, textSnippet: text.length > 120 ? `${text.slice(0, 120)}…` : text },
+      });
+    }
   }
 
   function handleDeleteComment(cardId: string, commentId: string) {
@@ -241,15 +291,37 @@ export function KanbanBoard({
         ? { ...c, comments: (c.comments ?? []).filter(cm => cm.id !== commentId) }
         : c
     ), comment?.imageSize ? -comment.imageSize : 0);
+    if (user) {
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId, cardTitle: card?.title ?? null, type: 'comment.deleted',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { commentId, textSnippet: comment ? (comment.text.length > 120 ? `${comment.text.slice(0, 120)}…` : comment.text) : undefined },
+      });
+    }
+  }
+
+  function assignmentDisplayLabel(value: CardAssignmentValue | null | undefined): string | null {
+    if (!value) return null;
+    return value.kind === 'member' ? (memberDisplayNameByUid[value.uid] ?? value.uid) : value.text;
   }
 
   function handleSaveCardAssignment(cardId: string, definitionId: string, value: CardAssignmentValue | null) {
+    const card = cards.find(c => c.id === cardId);
+    const oldValue = card?.cardAssignments?.[definitionId];
     onCardsChange(cards.map(c => {
       if (c.id !== cardId) return c;
       const next = { ...(c.cardAssignments ?? {}) };
       if (value) next[definitionId] = value; else delete next[definitionId];
       return { ...c, cardAssignments: Object.keys(next).length ? next : undefined };
     }));
+    if (user) {
+      const definitionLabel = (assignmentDefinitions ?? []).find(d => d.id === definitionId)?.label ?? definitionId;
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId, cardTitle: card?.title ?? null, type: 'assignment.changed',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { definitionId, definitionLabel, oldValue: assignmentDisplayLabel(oldValue), newValue: assignmentDisplayLabel(value) },
+      });
+    }
   }
 
   async function handleCreateChecklistOnDemand(link: CardTemplateChecklistLink) {
@@ -260,6 +332,11 @@ export function KanbanBoard({
       onCardsChange(cards.map(c => c.id === notesCard.id
         ? { ...c, checklistInstanceRefs: [...(c.checklistInstanceRefs ?? []), { linkId: link.id, templateId: link.templateId, instanceId }] }
         : c));
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId: notesCard.id, cardTitle: notesCard.title, type: 'checklist.linked',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { linkId: link.id, templateId: link.templateId, templateName: link.templateName, trigger: link.trigger.kind },
+      });
     } catch {
       message.error('Failed to create checklist — the template may have been removed.');
     } finally {
@@ -327,6 +404,7 @@ export function KanbanBoard({
           onEditComment={handleEditComment}
           onDeleteComment={handleDeleteComment}
           onSplitCard={onSplitCard ? titles => { onSplitCard(notesCard.id, titles); setNotesCardId(null); } : undefined}
+          onViewHistory={onViewCardHistory ? () => { setNotesCardId(null); onViewCardHistory(notesCard.id); } : undefined}
           otherKanbans={otherKanbans}
           onMoveOrCopy={onMoveOrCopyCard ? (targetId, mode) => { onMoveOrCopyCard(notesCard, targetId, mode); setNotesCardId(null); } : undefined}
           onUploadAttachment={onUploadAttachment ? (file, onProgress) => onUploadAttachment(notesCard.id, file, onProgress) : undefined}

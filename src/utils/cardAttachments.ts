@@ -3,6 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { storage, db } from '../firebase';
 import type { Kanban, CardAttachment } from '../types';
 import { MAX_ATTACHMENTS_BYTES, MAX_USER_ATTACHMENTS_BYTES } from '../constants';
+import { logKanbanEvent } from './kanbanEvents';
 
 // `otherOwnedKanbansBytes` is the caller's attachment usage across their
 // OTHER owned kanbans (excluding this one) — the account-wide free-tier cap
@@ -31,6 +32,8 @@ export async function uploadCardAttachment(
   file: File,
   otherOwnedKanbansBytes = 0,
   onProgress?: (pct: number) => void,
+  actorUid?: string,
+  actorEmail?: string | null,
 ): Promise<Kanban> {
   if ((kanban.attachmentsBytes ?? 0) + file.size > MAX_ATTACHMENTS_BYTES) {
     throw new Error('over-kanban-limit');
@@ -50,6 +53,13 @@ export async function uploadCardAttachment(
     attachmentsBytes: (kanban.attachmentsBytes ?? 0) + file.size,
   };
   await setDoc(doc(db, 'kanbans', kanban.id), updated);
+  if (actorUid) {
+    const cardTitle = kanban.cards.find(c => c.id === cardId)?.title ?? null;
+    logKanbanEvent({
+      kanbanId: kanban.id, cardId, cardTitle, type: 'attachment.uploaded', actorUid, actorEmail,
+      detail: { attachmentId, fileName: file.name, fileSize: file.size },
+    });
+  }
   return updated;
 }
 
@@ -89,7 +99,13 @@ export async function deleteCommentImageFile(path: string): Promise<void> {
   }
 }
 
-export async function deleteCardAttachment(kanban: Kanban, cardId: string, attachment: CardAttachment): Promise<Kanban> {
+export async function deleteCardAttachment(
+  kanban: Kanban,
+  cardId: string,
+  attachment: CardAttachment,
+  actorUid?: string,
+  actorEmail?: string | null,
+): Promise<Kanban> {
   try {
     await deleteObject(ref(storage, attachment.path));
   } catch {
@@ -103,5 +119,12 @@ export async function deleteCardAttachment(kanban: Kanban, cardId: string, attac
     attachmentsBytes: Math.max(0, (kanban.attachmentsBytes ?? 0) - attachment.size),
   };
   await setDoc(doc(db, 'kanbans', kanban.id), updated);
+  if (actorUid) {
+    const cardTitle = kanban.cards.find(c => c.id === cardId)?.title ?? null;
+    logKanbanEvent({
+      kanbanId: kanban.id, cardId, cardTitle, type: 'attachment.deleted', actorUid, actorEmail,
+      detail: { attachmentId: attachment.id, fileName: attachment.name, fileSize: attachment.size },
+    });
+  }
   return updated;
 }

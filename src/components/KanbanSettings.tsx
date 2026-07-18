@@ -111,6 +111,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         showAssignmentsOnCard: kanban.showAssignmentsOnCard ?? false,
         accoladesEnabled: kanban.accoladesEnabled ?? true,
         commentSortOrder: kanban.commentSortOrder ?? 'oldest',
+        showHistory: kanban.showHistory ?? false,
         ...Object.fromEntries(kanban.columns.map((c, i) => [`col_${i}`, c.label])),
       });
     }
@@ -159,6 +160,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       showAssignmentsOnCard: vals.showAssignmentsOnCard as boolean,
       accoladesEnabled: vals.accoladesEnabled as boolean,
       commentSortOrder: vals.commentSortOrder as 'newest' | 'oldest',
+      showHistory: vals.showHistory as boolean,
       staleAfterDays: staleAfterDaysValue,
       columns: updatedColumns,
       assignmentDefinitions: cleanedAssignmentDefs.length ? cleanedAssignmentDefs : undefined,
@@ -521,6 +523,15 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
             ]}
           />
         </Form.Item>
+
+        {/* History */}
+        <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>History</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Form.Item name="showHistory" valuePropName="checked" noStyle>
+            <Switch size="small" />
+          </Form.Item>
+          <span style={{ fontSize: 13, color: '#555' }}>Show board history tab</span>
+        </div>
 
         {/* Timeline */}
         <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13, color: '#555', marginTop: 24, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>Timeline</div>

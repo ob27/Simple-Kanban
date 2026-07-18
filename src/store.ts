@@ -13,6 +13,7 @@ import {
   DEFAULT_PROJECT_END_MONTH,
 } from './constants';
 import { syncInheritedAccessForKanban, syncInheritedAccessForKanbanId, selfAddInheritedAccessForKanban } from './utils/checklistIntegration';
+import { logKanbanEvent } from './utils/kanbanEvents';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,8 @@ export async function moveCardToKanban(
   targetKanbanId: string,
   card: KanbanCard,
   mode: 'move' | 'copy',
+  actorUid: string,
+  actorEmail?: string | null,
 ): Promise<void> {
   const targetSnap = await getDoc(doc(db, 'kanbans', targetKanbanId));
   if (!targetSnap.exists()) throw new Error('Target kanban not found');
@@ -169,12 +172,21 @@ export async function moveCardToKanban(
     order: maxOrder + 1,
   };
   await setDoc(doc(db, 'kanbans', target.id), { ...target, cards: [...target.cards, movedCard] });
+  logKanbanEvent({
+    kanbanId: target.id, cardId: movedCard.id, cardTitle: movedCard.title, type: 'card.receivedFromBoard',
+    actorUid, actorEmail, detail: { sourceKanbanId: sourceKanban.id, sourceKanbanName: sourceKanban.name },
+  });
   if (mode === 'move') {
     await setDoc(doc(db, 'kanbans', sourceKanban.id), {
       ...sourceKanban,
       cards: sourceKanban.cards.filter(c => c.id !== card.id),
     });
   }
+  logKanbanEvent({
+    kanbanId: sourceKanban.id, cardId: card.id, cardTitle: card.title,
+    type: mode === 'move' ? 'card.movedToBoard' : 'card.copiedToBoard',
+    actorUid, actorEmail, detail: { targetKanbanId: target.id, targetKanbanName: target.name },
+  });
 }
 
 export async function deleteKanban(kanban: Kanban): Promise<void> {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Popover, Spin, Switch, Badge, Modal, Radio, Select, message, Input, Tooltip } from 'antd';
-import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined, SearchOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined, SearchOutlined, InfoCircleOutlined, HistoryOutlined } from '@ant-design/icons';
 import type { KanbanCard, CardAttachment, CardChecklistInstanceRef } from '../types';
 import { saveKanban, deleteKanban, isKanbanOwner, loadUserKanbans, moveCardToKanban, cloneKanban } from '../store';
 import type { Kanban as KanbanType } from '../types';
@@ -23,6 +23,8 @@ import { KanbanBoard } from '../components/KanbanBoard';
 import { AddCardModal } from '../components/AddCardModal';
 import { KanbanSettings } from '../components/KanbanSettings';
 import { AccessModal } from '../components/AccessModal';
+import { HistoryView } from '../components/HistoryView';
+import { logKanbanEvent } from '../utils/kanbanEvents';
 import { UserAvatar } from '../components/UserAvatar';
 import { useKanban } from '../hooks/useKanban';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -49,6 +51,8 @@ export function BoardPage() {
   const [otherKanbans, setOtherKanbans] = useState<KanbanType[]>([]);
   const [cardSearch, setCardSearch] = useState('');
   const [accessOpen, setAccessOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyCardFilter, setHistoryCardFilter] = useState<string | null>(null);
 
   const isOwner = kanban && user ? isKanbanOwner(kanban, user.uid) : false;
   const isViewer = kanban && user ? (kanban.viewerIds ?? []).includes(user.uid) : false;
@@ -169,6 +173,9 @@ export function BoardPage() {
     const maxOrder = kanban.cards.reduce((m, c) => c.columnId === card.columnId ? Math.max(m, c.order) : m, -1);
     const newCard: KanbanCard = { ...card, id: crypto.randomUUID(), order: maxOrder + 1, movedAt: Date.now() };
     setKanban({ ...kanban, cards: [...kanban.cards, newCard] });
+    if (user) {
+      logKanbanEvent({ kanbanId: kanban.id, cardId: newCard.id, cardTitle: newCard.title, type: 'card.created', actorUid: user.uid, actorEmail: user.email });
+    }
 
     // Simple Checklists integration: any link configured to create an
     // instance on card creation fires now. A template that's since been
@@ -181,6 +188,11 @@ export function BoardPage() {
       try {
         const instanceId = await createChecklistInstanceForCard(kanban, newCard, link, user.uid, user.email ?? undefined);
         refs.push({ linkId: link.id, templateId: link.templateId, instanceId });
+        logKanbanEvent({
+          kanbanId: kanban.id, cardId: newCard.id, cardTitle: newCard.title, type: 'checklist.linked',
+          actorUid: user.uid, actorEmail: user.email,
+          detail: { linkId: link.id, templateId: link.templateId, templateName: link.templateName, trigger: link.trigger.kind },
+        });
       } catch { /* skip */ }
     }
     if (refs.length > 0) {
@@ -204,10 +216,19 @@ export function BoardPage() {
 
   function handleBulkStatusChange(columnId: string) {
     if (!kanban) return;
+    const affectedCards = kanban.cards.filter(c => selectedCardIds.has(c.id));
     setKanban({
       ...kanban,
       cards: kanban.cards.map(c => selectedCardIds.has(c.id) ? { ...c, columnId, movedAt: Date.now() } : c),
     });
+    if (user && affectedCards.length > 0) {
+      const toColumnLabel = kanban.columns.find(col => col.id === columnId)?.label ?? columnId;
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId: null, cardTitle: null, type: 'card.bulkStatusChange',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { toColumnId: columnId, toColumnLabel, cardIds: affectedCards.map(c => c.id), cardTitles: affectedCards.map(c => c.title) },
+      });
+    }
     setSelectedCardIds(new Set());
   }
 
@@ -245,6 +266,13 @@ export function BoardPage() {
       ...kanban,
       cards: kanban.cards.filter(c => !otherIds.has(c.id)).map(c => c.id === mergedCard.id ? mergedCard : c),
     });
+    if (user) {
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId: mergedCard.id, cardTitle: mergedCard.title, type: 'card.merged',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { survivorCardId: mergedCard.id, survivorCardTitle: mergedCard.title, absorbedCardIds: others.map(c => c.id), absorbedCardTitles: others.map(c => c.title) },
+      });
+    }
     setSelectedCardIds(new Set());
     setMergeOpen(false);
     setMergeSurvivorId(null);
@@ -267,12 +295,19 @@ export function BoardPage() {
     const cards = [...kanban.cards];
     cards.splice(idx, 1, ...newCards);
     setKanban({ ...kanban, cards });
+    if (user) {
+      logKanbanEvent({
+        kanbanId: kanban.id, cardId: original.id, cardTitle: original.title, type: 'card.split',
+        actorUid: user.uid, actorEmail: user.email,
+        detail: { originalCardId: original.id, originalCardTitle: original.title, resultCardIds: newCards.map(c => c.id), resultCardTitles: newCards.map(c => c.title) },
+      });
+    }
   }
 
   async function handleMoveOrCopyCard(card: KanbanCard, targetKanbanId: string, mode: 'move' | 'copy') {
-    if (!kanban) return;
+    if (!kanban || !user) return;
     try {
-      await moveCardToKanban(kanban, targetKanbanId, card, mode);
+      await moveCardToKanban(kanban, targetKanbanId, card, mode, user.uid, user.email);
       message.success(mode === 'move' ? 'Card moved' : 'Card copied');
     } catch {
       message.error(`Failed to ${mode} card`);
@@ -282,7 +317,7 @@ export function BoardPage() {
   async function handleUploadAttachment(cardId: string, file: File, onProgress?: (pct: number) => void) {
     if (!kanban) return;
     try {
-      await uploadCardAttachment(kanban, cardId, file, otherOwnedKanbansBytes, onProgress);
+      await uploadCardAttachment(kanban, cardId, file, otherOwnedKanbansBytes, onProgress, user?.uid, user?.email);
     } catch (err) {
       if (err instanceof Error && err.message === 'over-kanban-limit') {
         message.error(`This board has used ${formatBytes(kanban.attachmentsBytes ?? 0)} of ${formatBytes(MAX_ATTACHMENTS_BYTES)} — delete an attachment to free up space`);
@@ -297,7 +332,7 @@ export function BoardPage() {
   async function handleDeleteAttachment(cardId: string, attachment: CardAttachment) {
     if (!kanban) return;
     try {
-      await deleteCardAttachment(kanban, cardId, attachment);
+      await deleteCardAttachment(kanban, cardId, attachment, user?.uid, user?.email);
     } catch {
       message.error('Failed to delete attachment');
     }
@@ -328,6 +363,9 @@ export function BoardPage() {
     const card = kanban.cards.find(c => c.id === cardId);
     if (card?.checklistInstanceRefs?.length) markCardInstancesOrphaned(card.checklistInstanceRefs).catch(() => {});
     setKanban({ ...kanban, cards: kanban.cards.filter(c => c.id !== cardId) });
+    if (user && card) {
+      logKanbanEvent({ kanbanId: kanban.id, cardId: card.id, cardTitle: card.title, type: 'card.deleted', actorUid: user.uid, actorEmail: user.email });
+    }
   }
 
   function handleCardsChange(newCards: KanbanCard[], attachmentsBytesDelta = 0) {
@@ -415,6 +453,16 @@ export function BoardPage() {
 
   const showLifeline = (kanban.showLifeline ?? true) && !isMobile;
   const showProgressBar = kanban.showProgressBar ?? true;
+
+  if (historyOpen) {
+    return (
+      <HistoryView
+        kanban={kanban}
+        initialCardFilter={historyCardFilter}
+        onBack={() => { setHistoryOpen(false); setHistoryCardFilter(null); }}
+      />
+    );
+  }
 
   return (
     <div style={{
@@ -579,6 +627,17 @@ export function BoardPage() {
               </Button>
             </Badge>
           )}
+          {kanban.showHistory && (
+            <Button
+              icon={<HistoryOutlined />}
+              size="small"
+              type="text"
+              onClick={() => setHistoryOpen(true)}
+              style={{ color: '#666' }}
+            >
+              {!isMobile && 'History'}
+            </Button>
+          )}
           {isOwner && (
             <Button
               icon={<SettingOutlined />}
@@ -618,6 +677,7 @@ export function BoardPage() {
         assignmentDefinitions={kanban.assignmentDefinitions}
         showAssignmentsOnCard={kanban.showAssignmentsOnCard}
         members={boardMembers}
+        onViewCardHistory={kanban.showHistory ? (cardId) => { setHistoryCardFilter(cardId); setHistoryOpen(true); } : undefined}
       />
 
       {selectMode && selectedCardIds.size > 0 && (
@@ -677,7 +737,17 @@ export function BoardPage() {
         <AddCardModal
           columns={kanban.columns}
           onAdd={addCard}
-          onImport={cards => setKanban({ ...kanban, cards })}
+          onImport={cards => {
+            const before = kanban.cards.length;
+            setKanban({ ...kanban, cards });
+            if (user) {
+              logKanbanEvent({
+                kanbanId: kanban.id, cardId: null, cardTitle: null, type: 'import.csvReplace',
+                actorUid: user.uid, actorEmail: user.email,
+                detail: { addedCount: cards.length, removedCount: before, totalAfter: cards.length },
+              });
+            }
+          }}
           showStoryPoints={kanban.showStoryPoints}
         />
       )}

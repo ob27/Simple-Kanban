@@ -86,6 +86,39 @@ export interface CardTemplateChecklistLink {
   linkedByUid: string;
 }
 
+// Every discrete, loggable action a card (or a bulk operation across
+// several cards) can undergo — see src/utils/kanbanEvents.ts's
+// logKanbanEvent for how these get written. Deliberately excludes
+// same-column drag reorders and comment-reaction toggles: pure-noise
+// interactions with no persistent semantic content, see that file's own
+// doc comment for the reasoning.
+export type KanbanEventType =
+  | 'card.created' | 'card.movedColumn' | 'card.bulkStatusChange'
+  | 'card.titleEdited' | 'card.notesEdited' | 'card.pillEdited' | 'card.storyPointsEdited'
+  | 'card.deleted' | 'card.merged' | 'card.split'
+  | 'card.movedToBoard' | 'card.copiedToBoard' | 'card.receivedFromBoard'
+  | 'comment.added' | 'comment.edited' | 'comment.deleted'
+  | 'attachment.uploaded' | 'attachment.deleted'
+  | 'assignment.changed' | 'checklist.linked' | 'import.csvReplace';
+
+// A single append-only history entry — kbnEvents/{eventId} in Firestore,
+// never sclEvents-style batched with a primary write (see
+// src/utils/kanbanEvents.ts). One flat shape with a loosely-typed `detail`
+// catch-all rather than a discriminated union: Firestore doesn't enforce
+// structure at read time regardless, and a union would need 15+ distinct
+// construction shapes for marginal type-safety gain.
+export interface KanbanEvent {
+  id: string;
+  kanbanId: string;
+  cardId: string | null;       // null only for board-level events (import.csvReplace, bulkStatusChange)
+  cardTitle: string | null;    // denormalized AT TIME OF EVENT — cards get deleted/retitled later
+  type: KanbanEventType;
+  actorUid: string;
+  actorEmail: string | null;
+  occurredAt: number;
+  detail: Record<string, unknown> | null;
+}
+
 export type FolderRole = 'owner' | 'editor' | 'viewer';
 
 export interface Folder {
@@ -147,4 +180,8 @@ export interface Kanban {
   // Defaults to 'oldest' (unset) — matches how comments have always
   // rendered (plain append-order), so existing boards are unaffected.
   commentSortOrder?: 'newest' | 'oldest';
+  // Gates whether the "History" toolbar button is offered at all — never
+  // gates whether the History view is CURRENTLY open (that's local,
+  // non-persisted state in BoardPage.tsx). Defaults to false/hidden.
+  showHistory?: boolean;
 }

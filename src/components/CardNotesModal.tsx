@@ -34,6 +34,7 @@ interface Props {
   onDeleteComment: (cardId: string, commentId: string) => void;
   onToggleReaction?: (commentId: string, emoji: string) => void;
   onSplitCard?: (titles: string[]) => void;
+  onViewHistory?: () => void;
   otherKanbans?: Kanban[];
   onMoveOrCopy?: (targetKanbanId: string, mode: 'move' | 'copy') => void;
   onUploadAttachment?: (file: File, onProgress?: (pct: number) => void) => Promise<void> | void;
@@ -146,7 +147,7 @@ function AssignmentRow({ label, value, members, readOnly, onChange }: {
 export function CardNotesModal({
   card, columnColor, currentUser, canDeleteAnyComment, readOnly, showStoryPoints,
   onClose, onSaveCard, onAddComment, onEditComment, onDeleteComment, onToggleReaction,
-  onSplitCard, otherKanbans, onMoveOrCopy, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
+  onSplitCard, onViewHistory, otherKanbans, onMoveOrCopy, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
   assignmentDefinitions, members, onSaveCardAssignment, commentSortOrder,
   checklistLinks, onCreateChecklistOnDemand, creatingChecklistLinkId,
 }: Props) {
@@ -293,22 +294,24 @@ export function CardNotesModal({
     >
       {/* Header — editable title + pill */}
       <div style={{ borderLeft: `5px solid ${columnColor}`, padding: '18px 24px 16px', background: '#fff', position: 'relative' }}>
-        {!readOnly && (onSplitCard || (otherKanbans && otherKanbans.length > 0)) && (
-          <div style={{ position: 'absolute', top: 12, right: 44 }}>
+        {((!readOnly && (onSplitCard || (otherKanbans && otherKanbans.length > 0))) || onViewHistory) && (
+          <div style={{ position: 'absolute', top: 12, right: 44, zIndex: 2 }}>
             <Dropdown
               trigger={['click']}
               menu={{
                 items: [
-                  ...(onSplitCard ? [{ key: 'split', label: 'Split card' }] : []),
-                  ...(otherKanbans && otherKanbans.length > 0 ? [
+                  ...(!readOnly && onSplitCard ? [{ key: 'split', label: 'Split card' }] : []),
+                  ...(!readOnly && otherKanbans && otherKanbans.length > 0 ? [
                     { key: 'move', label: 'Move to kanban…' },
                     { key: 'copy', label: 'Copy to kanban…' },
                   ] : []),
+                  ...(onViewHistory ? [{ key: 'history', label: 'View history' }] : []),
                 ],
                 onClick: ({ key }) => {
                   if (key === 'split') openSplit();
                   if (key === 'move') { setMoveTargetId(null); setMoveMode('move'); }
                   if (key === 'copy') { setMoveTargetId(null); setMoveMode('copy'); }
+                  if (key === 'history') onViewHistory?.();
                 },
               }}
             >
@@ -323,7 +326,7 @@ export function CardNotesModal({
           onPressEnter={e => (e.currentTarget as HTMLInputElement).blur()}
           variant="borderless"
           readOnly={readOnly}
-          style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', padding: '0 0 2px', width: '100%', lineHeight: 1.3, cursor: readOnly ? 'default' : undefined }}
+          style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', padding: '0 32px 2px 0', width: '100%', lineHeight: 1.3, cursor: readOnly ? 'default' : undefined }}
         />
         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 11, color: '#bbb', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
