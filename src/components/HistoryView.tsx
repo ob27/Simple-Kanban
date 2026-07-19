@@ -5,7 +5,7 @@ import {
   ArrowLeftOutlined, SearchOutlined, PlusOutlined, SwapOutlined, EditOutlined,
   DeleteOutlined, MergeCellsOutlined, ScissorOutlined, ExportOutlined, ImportOutlined,
   CommentOutlined, PaperClipOutlined, UserSwitchOutlined, LinkOutlined, UploadOutlined,
-  UserOutlined, LogoutOutlined,
+  UserOutlined, LogoutOutlined, CheckCircleOutlined,
 } from '@ant-design/icons';
 import type { Kanban, KanbanEvent, KanbanEventType } from '../types';
 import { loadKanbanEventsPage } from '../utils/kanbanEvents';
@@ -38,6 +38,8 @@ const EVENT_TYPE_LABELS: Record<KanbanEventType, string> = {
   'attachment.deleted': 'Attachment deleted',
   'assignment.changed': 'Assignment changed',
   'checklist.linked': 'Checklist linked',
+  'checklist.itemCompleted': 'Checklist item completed',
+  'checklist.instanceCompleted': 'Checklist completed',
   'import.csvReplace': 'CSV import',
 };
 
@@ -62,6 +64,8 @@ const EVENT_TYPE_ICONS: Record<KanbanEventType, React.ReactNode> = {
   'attachment.deleted': <PaperClipOutlined />,
   'assignment.changed': <UserSwitchOutlined />,
   'checklist.linked': <LinkOutlined />,
+  'checklist.itemCompleted': <CheckCircleOutlined />,
+  'checklist.instanceCompleted': <CheckCircleOutlined />,
   'import.csvReplace': <UploadOutlined />,
 };
 
@@ -88,6 +92,8 @@ function describeEvent(e: KanbanEvent): string {
     case 'attachment.deleted': return `deleted "${d.fileName}"`;
     case 'assignment.changed': return `changed "${d.definitionLabel}" from ${d.oldValue || '(none)'} to ${d.newValue || '(none)'}`;
     case 'checklist.linked': return `linked checklist "${d.templateName}"`;
+    case 'checklist.itemCompleted': return `completed "${d.itemLabel}" in checklist "${d.templateName}"`;
+    case 'checklist.instanceCompleted': return `completed the checklist "${d.templateName}"`;
     case 'import.csvReplace': return `replaced all cards via CSV import (${d.addedCount} added, ${d.removedCount} removed)`;
   }
 }

@@ -99,7 +99,14 @@ export type KanbanEventType =
   | 'card.movedToBoard' | 'card.copiedToBoard' | 'card.receivedFromBoard'
   | 'comment.added' | 'comment.edited' | 'comment.deleted'
   | 'attachment.uploaded' | 'attachment.deleted'
-  | 'assignment.changed' | 'checklist.linked' | 'import.csvReplace';
+  | 'assignment.changed' | 'checklist.linked' | 'import.csvReplace'
+  // Written directly by Simple-Checklists (no shared code between the two
+  // repos — see kanbanEvents.ts's own doc comment), whenever a linked
+  // sclInstances doc's saveInstanceResponse hits a milestone (item fully
+  // answered, or the whole instance auto-completes). Not every raw value
+  // change — that would flood this feed the same way a per-keystroke title
+  // event would.
+  | 'checklist.itemCompleted' | 'checklist.instanceCompleted';
 
 // A single append-only history entry — kbnEvents/{eventId} in Firestore,
 // never sclEvents-style batched with a primary write (see
