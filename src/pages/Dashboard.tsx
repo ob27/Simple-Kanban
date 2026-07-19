@@ -22,6 +22,7 @@ import { CreateKanbanModal } from '../components/CreateKanbanModal';
 import { AccessModal } from '../components/AccessModal';
 import { FolderMembersModal } from '../components/FolderMembersModal';
 import { UserAvatar } from '../components/UserAvatar';
+import { NotificationBell } from '../components/NotificationBell';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { exportAllKanbansCSV } from '../utils/csvExportAll';
 import { getWorkspaceSettings, uploadLogo, deleteLogo, saveNavBgColor, saveWorkspaceAccolades, type WorkspaceSettings } from '../utils/logoUpload';
@@ -356,6 +357,7 @@ export function Dashboard() {
           }
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {user && <NotificationBell uid={user.uid} />}
           <Dropdown
             trigger={['click']}
             menu={{
