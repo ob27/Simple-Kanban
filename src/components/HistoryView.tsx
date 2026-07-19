@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, DatePicker, Spin, Tag } from 'antd';
+import { Button, Input, Select, DatePicker, Spin, Tag, Dropdown } from 'antd';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import {
   ArrowLeftOutlined, SearchOutlined, PlusOutlined, SwapOutlined, EditOutlined,
   DeleteOutlined, MergeCellsOutlined, ScissorOutlined, ExportOutlined, ImportOutlined,
   CommentOutlined, PaperClipOutlined, UserSwitchOutlined, LinkOutlined, UploadOutlined,
+  UserOutlined, LogoutOutlined,
 } from '@ant-design/icons';
 import type { Kanban, KanbanEvent, KanbanEventType } from '../types';
 import { loadKanbanEventsPage } from '../utils/kanbanEvents';
 import { buildWildcardMatcher } from '../utils/wildcardSearch';
 import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
+import { useAuth } from '../AuthContext';
+import { UserAvatar } from './UserAvatar';
+import { NotificationBell } from './NotificationBell';
 
 const { RangePicker } = DatePicker;
 
@@ -95,6 +99,8 @@ interface Props {
 }
 
 export function HistoryView({ kanban, initialCardFilter, onBack }: Props) {
+  const { user, signOut } = useAuth();
+  const ownProfile = useUserProfiles(user ? [user.uid] : []);
   const [events, setEvents] = useState<KanbanEvent[]>([]);
   const [cursor, setCursor] = useState<QueryDocumentSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -147,7 +153,45 @@ export function HistoryView({ kanban, initialCardFilter, onBack }: Props) {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: '12px 16px', gap: 12, background: '#EEF0F5' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#EEF0F5' }}>
+      <div style={{
+        background: '#1a1a2e', padding: '0 24px', height: 56,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+      }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>
+          <img src="/favicon-white.svg" alt="" style={{ height: 16, width: 'auto' }} />
+          Simple Kanban
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {user && <NotificationBell uid={user.uid} />}
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'email', label: user ? resolveDisplay(user.uid, user.email ?? '', ownProfile).name : user, disabled: true },
+                { type: 'divider' as const },
+                { key: 'all-products', icon: <ArrowLeftOutlined />, label: 'All products' },
+                { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
+                { type: 'divider' as const },
+                { key: 'signout', icon: <LogoutOutlined />, label: 'Sign out', danger: true },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'all-products') window.location.href = '/';
+                if (key === 'profile') window.location.href = '/profile';
+                if (key === 'signout') signOut();
+              },
+            }}
+          >
+            <span style={{ display: 'inline-flex', cursor: 'pointer' }}>
+              {user?.email
+                ? <UserAvatar email={user.email} seed={resolveDisplay(user.uid, user.email, ownProfile).avatarSeed} photoURL={ownProfile[user.uid]?.avatarPhotoURL} size={28} />
+                : <span style={{ color: '#8794b0', fontSize: 13 }}>Account</span>}
+            </span>
+          </Dropdown>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '12px 16px', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} style={{ color: '#666' }} />
         <span style={{ fontSize: 20, fontWeight: 800, color: '#1a1a2e' }}>History</span>
@@ -221,6 +265,7 @@ export function HistoryView({ kanban, initialCardFilter, onBack }: Props) {
             <Button loading={loadingMore} onClick={loadMore}>Load more</Button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
