@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Popover, Spin, Switch, Badge, Modal, Radio, Select, message, Input, Tooltip } from 'antd';
-import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined, SearchOutlined, InfoCircleOutlined, HistoryOutlined } from '@ant-design/icons';
+import { Button, Popover, Spin, Switch, Badge, Modal, Radio, Select, message, Input, Tooltip, Dropdown } from 'antd';
+import { EditOutlined, ArrowLeftOutlined, SettingOutlined, FilterOutlined, CheckSquareOutlined, SearchOutlined, InfoCircleOutlined, HistoryOutlined, UserOutlined, LogoutOutlined } from '@ant-design/icons';
 import type { KanbanCard, CardAttachment, CardChecklistInstanceRef } from '../types';
 import { saveKanban, deleteKanban, isKanbanOwner, loadUserKanbans, moveCardToKanban, cloneKanban } from '../store';
 import type { Kanban as KanbanType } from '../types';
@@ -26,13 +26,14 @@ import { AccessModal } from '../components/AccessModal';
 import { HistoryView } from '../components/HistoryView';
 import { logKanbanEvent } from '../utils/kanbanEvents';
 import { UserAvatar } from '../components/UserAvatar';
+import { NotificationBell } from '../components/NotificationBell';
 import { useKanban } from '../hooks/useKanban';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
 export function BoardPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { kanban, setKanban, remoteVersion, loading, notFound } = useKanban(id!);
 
   const [editTotal, setEditTotal] = useState(false);
@@ -54,6 +55,7 @@ export function BoardPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyCardFilter, setHistoryCardFilter] = useState<string | null>(null);
 
+  const ownProfile = useUserProfiles(user ? [user.uid] : []);
   const isOwner = kanban && user ? isKanbanOwner(kanban, user.uid) : false;
   const isViewer = kanban && user ? (kanban.viewerIds ?? []).includes(user.uid) : false;
   const { isMobile } = useBreakpoint();
@@ -161,10 +163,51 @@ export function BoardPage() {
     </div>
   );
 
+  // Not a real board view (no id, or an id the user can't access) — show
+  // the standard product header (same as Dashboard.tsx) rather than a bare
+  // message, since this page isn't actually rendering a kanban board here.
   if (notFound || !kanban) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#EEF0F5', flexDirection: 'column', gap: 16 }}>
-      <p style={{ color: '#666' }}>Kanban not found or you don't have access.</p>
-      <Button onClick={() => navigate('/')}>Back to Dashboard</Button>
+    <div style={{ height: '100vh', background: '#EEF0F5', display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        background: '#1a1a2e', padding: '0 24px', height: 56,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+      }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 800, fontSize: 18, letterSpacing: '-0.3px' }}>
+          <img src="/favicon-white.svg" alt="" style={{ height: 16, width: 'auto' }} />
+          Simple Kanban
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {user && <NotificationBell uid={user.uid} />}
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'email', label: user ? resolveDisplay(user.uid, user.email ?? '', ownProfile).name : user, disabled: true },
+                { type: 'divider' as const },
+                { key: 'all-products', icon: <ArrowLeftOutlined />, label: 'All products' },
+                { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
+                { type: 'divider' as const },
+                { key: 'signout', icon: <LogoutOutlined />, label: 'Sign out', danger: true },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'all-products') window.location.href = '/';
+                if (key === 'profile') window.location.href = '/profile';
+                if (key === 'signout') signOut();
+              },
+            }}
+          >
+            <span style={{ display: 'inline-flex', cursor: 'pointer' }}>
+              {user?.email
+                ? <UserAvatar email={user.email} seed={resolveDisplay(user.uid, user.email, ownProfile).avatarSeed} photoURL={ownProfile[user.uid]?.avatarPhotoURL} size={28} />
+                : <span style={{ color: '#8794b0', fontSize: 13 }}>Account</span>}
+            </span>
+          </Dropdown>
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <p style={{ color: '#666' }}>Kanban not found or you don't have access.</p>
+        <Button onClick={() => navigate('/')}>Back to Dashboard</Button>
+      </div>
     </div>
   );
 

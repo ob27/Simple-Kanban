@@ -39,6 +39,13 @@ interface SclTemplateVersionSummary {
   itemsPerPageThreshold?: unknown;
 }
 
+interface SclComponentResponse {
+  value?: unknown;
+}
+interface SclCheckItemResponse {
+  values?: Record<string, SclComponentResponse>;
+}
+
 export interface SclInstanceSummary {
   id: string;
   templateId: string;
@@ -48,6 +55,13 @@ export interface SclInstanceSummary {
   completedRequiredCount?: number;
   totalRequiredCount?: number;
   source?: { kind: string; orphaned?: boolean };
+  // Already present on every sclInstances doc (Simple-Checklists writes it
+  // at createInstance time) — read here too so the card can show progress
+  // across ALL items, not just required ones (totalRequiredCount/
+  // completedRequiredCount are 0/0 for a checklist with no required items
+  // at all, which would otherwise hide the bar entirely).
+  versionSnapshot?: { checkItems: SclCheckItem[] };
+  responses?: Record<string, SclCheckItemResponse>;
 }
 
 // Templates the current uid has ANY access to (owner/co-owner/editor/

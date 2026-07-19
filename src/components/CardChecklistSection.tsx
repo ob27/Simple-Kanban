@@ -53,6 +53,26 @@ function ChecklistProgressBar({ completed, total }: { completed: number; total: 
   );
 }
 
+// Progress across ALL check items, not just required ones —
+// totalRequiredCount/completedRequiredCount are 0/0 for a checklist with no
+// required items at all, which would otherwise hide the bar entirely even
+// though there's real work left to do. An item counts as answered once
+// every one of its components has a defined value (matches this session's
+// own "composite item" model — a checkbox+namePicker item isn't done until
+// both parts are filled in), not full per-type validation like
+// Checklists' own isComponentValueValid — good enough for a lightweight
+// card-level progress indicator.
+function itemProgress(summary: SclInstanceSummary): { completed: number; total: number } {
+  const items = summary.versionSnapshot?.checkItems ?? [];
+  const responses = summary.responses ?? {};
+  const completed = items.filter(item => {
+    const values = responses[item.id]?.values;
+    if (!values) return false;
+    return item.components.every(c => values[c.id]?.value !== undefined && values[c.id]?.value !== null);
+  }).length;
+  return { completed, total: items.length };
+}
+
 function LinkedChecklistRow({ instanceId, onSummary }: { instanceId: string; onSummary: (instanceId: string, summary: SclInstanceSummary | null) => void }) {
   const [summary, setSummary] = useState<SclInstanceSummary | null | undefined>(undefined);
 
@@ -63,8 +83,7 @@ function LinkedChecklistRow({ instanceId, onSummary }: { instanceId: string; onS
     return <span style={{ fontSize: 12, color: '#c0392b', fontStyle: 'italic' }}>Checklist removed</span>;
   }
 
-  const total = summary.totalRequiredCount ?? 0;
-  const completed = summary.completedRequiredCount ?? 0;
+  const { completed, total } = itemProgress(summary);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
