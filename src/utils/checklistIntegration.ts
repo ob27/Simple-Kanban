@@ -20,9 +20,10 @@ export interface SclTemplateSummary {
   pendingDeletion?: unknown;
 }
 
-interface SclCheckItemComponent {
+export interface SclCheckItemComponent {
   id: string;
   required: boolean;
+  type: string;
 }
 interface SclCheckItem {
   id: string;

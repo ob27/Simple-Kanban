@@ -3,7 +3,7 @@ import { Button, Spin, Popover } from 'antd';
 import { InfoCircleOutlined, RightOutlined, PlusOutlined } from '@ant-design/icons';
 import type { CardTemplateChecklistLink, CardChecklistInstanceRef } from '../types';
 import { subscribeInstanceSummary, getTemplateDescription } from '../utils/checklistIntegration';
-import type { SclInstanceSummary } from '../utils/checklistIntegration';
+import type { SclInstanceSummary, SclCheckItemComponent } from '../utils/checklistIntegration';
 
 interface Props {
   links: CardTemplateChecklistLink[];
@@ -53,22 +53,34 @@ function ChecklistProgressBar({ completed, total }: { completed: number; total: 
   );
 }
 
+// Boolean-style components store an explicit `false` for their default
+// (unchecked/off) state — a defined value, but not a DONE one — so those
+// types need `value === true`, not just "has a value", or an untouched
+// checkbox would count as answered. Every other type just needs a
+// defined, non-null value. Not full per-type validation like Checklists'
+// own isComponentValueValid (e.g. text format/min-length rules aren't
+// checked here) — good enough for a lightweight card-level indicator.
+const BOOLEAN_COMPONENT_TYPES = new Set(['checkpoint', 'checkbox', 'toggle']);
+
+function isComponentAnswered(component: SclCheckItemComponent, value: unknown): boolean {
+  if (BOOLEAN_COMPONENT_TYPES.has(component.type)) return value === true;
+  return value !== undefined && value !== null;
+}
+
 // Progress across ALL check items, not just required ones —
 // totalRequiredCount/completedRequiredCount are 0/0 for a checklist with no
 // required items at all, which would otherwise hide the bar entirely even
 // though there's real work left to do. An item counts as answered once
-// every one of its components has a defined value (matches this session's
-// own "composite item" model — a checkbox+namePicker item isn't done until
-// both parts are filled in), not full per-type validation like
-// Checklists' own isComponentValueValid — good enough for a lightweight
-// card-level progress indicator.
+// every one of its components is answered (matches this session's own
+// "composite item" model — a checkbox+namePicker item isn't done until
+// both parts are filled in).
 function itemProgress(summary: SclInstanceSummary): { completed: number; total: number } {
   const items = summary.versionSnapshot?.checkItems ?? [];
   const responses = summary.responses ?? {};
   const completed = items.filter(item => {
     const values = responses[item.id]?.values;
     if (!values) return false;
-    return item.components.every(c => values[c.id]?.value !== undefined && values[c.id]?.value !== null);
+    return item.components.every(c => isComponentAnswered(c, values[c.id]?.value));
   }).length;
   return { completed, total: items.length };
 }
