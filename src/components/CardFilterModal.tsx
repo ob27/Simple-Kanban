@@ -25,6 +25,11 @@ export function assignmentFilterKey(definitionId: string, valueKey: string): str
   return `assign:${definitionId}:${valueKey}`;
 }
 
+// Sentinel valueKey representing "no allocation set for this definition" —
+// distinct from any real member uid/free-text value, so it composes with
+// assignmentFilterKey exactly like a normal value would.
+export const UNALLOCATED_KEY = '__unallocated__';
+
 interface FilterEntry {
   key: string;
   label: string;
@@ -46,12 +51,16 @@ export function CardFilterModal({ open, cards, assignmentDefinitions, memberDisp
   // One group per assignment definition, each grouping its own distinct
   // values (member uid or free text) across every card — mirrors pill
   // counting above but keyed per-definition since the same uid/text under
-  // a different definition is a different filter option.
+  // a different definition is a different filter option. "Unallocated"
+  // (no value at all for this definition) is tracked as its own bucket and
+  // always pinned first — the whole point of an allocation filter is being
+  // able to find the gaps, not just slice by who's already assigned.
   const assignmentGroups = (assignmentDefinitions ?? []).map(def => {
     const counts = new Map<string, { label: string; count: number }>();
+    let unallocatedCount = 0;
     for (const card of cards) {
       const val = card.cardAssignments?.[def.id];
-      if (!val) continue;
+      if (!val) { unallocatedCount++; continue; }
       const valueKey = val.kind === 'member' ? val.uid : `text:${val.text}`;
       const label = val.kind === 'member' ? (memberDisplayNameByUid?.[val.uid] || val.uid) : val.text;
       const existing = counts.get(valueKey);
@@ -60,6 +69,9 @@ export function CardFilterModal({ open, cards, assignmentDefinitions, memberDisp
     const entries: FilterEntry[] = [...counts.entries()]
       .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
       .map(([valueKey, { label, count }]) => ({ key: assignmentFilterKey(def.id, valueKey), label, count }));
+    if (unallocatedCount > 0) {
+      entries.unshift({ key: assignmentFilterKey(def.id, UNALLOCATED_KEY), label: 'Unallocated', count: unallocatedCount });
+    }
     return { def, entries };
   }).filter(g => g.entries.length > 0);
 

@@ -57,8 +57,13 @@ export function KanbanCard({
   }, [setNodeRef]);
 
   const daysSinceMoved = card.movedAt ? (Date.now() - card.movedAt) / 86400000 : 0;
-  const isStale = !!staleAfterDays && daysSinceMoved >= staleAfterDays;
-  const isVeryStale = !!staleAfterDays && daysSinceMoved >= staleAfterDays * 2;
+  const autoIsStale = !!staleAfterDays && daysSinceMoved >= staleAfterDays;
+  const autoIsVeryStale = !!staleAfterDays && daysSinceMoved >= staleAfterDays * 2;
+  // A manual pick always wins over the age-based derivation — 'none'
+  // suppresses the badge even on a genuinely stale card, and picking a
+  // specific effect shows it even on a fresh one. Unset (the vast majority
+  // of cards) falls through to the exact same automatic behavior as before.
+  const activeAnimation = card.manualAnimation ?? (autoIsVeryStale ? 'flame' : autoIsStale ? 'smoke' : 'none');
 
   useEffect(() => {
     const el = nodeRef.current;
@@ -182,15 +187,26 @@ export function KanbanCard({
           </div>
         )}
 
-        {!isOverlay && isStale && (
+        {!isOverlay && activeAnimation !== 'none' && (
           <div style={{ position: 'absolute', top: -6, right: 8, pointerEvents: 'none', zIndex: 1 }}>
-            {isVeryStale ? (
+            {activeAnimation === 'flame' && (
               <span style={{ fontSize: 16, display: 'inline-block', animation: 'kc-flame 0.6s ease-in-out infinite', filter: 'drop-shadow(0 0 4px rgba(255,120,0,0.8))' }}>
                 🔥
               </span>
-            ) : (
+            )}
+            {activeAnimation === 'smoke' && (
               <span style={{ fontSize: 14, display: 'inline-block', opacity: 0.5, animation: 'kc-smoke 2.4s ease-in infinite' }}>
                 💨
+              </span>
+            )}
+            {activeAnimation === 'ice' && (
+              <span style={{ fontSize: 15, display: 'inline-block', animation: 'kc-ice 2.2s ease-in-out infinite', filter: 'drop-shadow(0 0 4px rgba(80,180,255,0.85))' }}>
+                🧊
+              </span>
+            )}
+            {activeAnimation === 'sickly' && (
+              <span style={{ fontSize: 15, display: 'inline-block', animation: 'kc-sickly 1.1s ease-in-out infinite', filter: 'drop-shadow(0 0 3px rgba(120,190,60,0.75))' }}>
+                🤢
               </span>
             )}
           </div>

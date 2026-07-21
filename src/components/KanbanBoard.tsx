@@ -8,7 +8,7 @@ import {
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
-import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue, CardChecklistInstanceRef, CardTemplateChecklistLink } from '../types';
+import type { KanbanCard, ColumnConfig, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue, CardChecklistInstanceRef, CardTemplateChecklistLink, CardAnimation } from '../types';
 import type { KanbanMember } from '../utils/kanbanMembers';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard as KanbanCardComponent } from './KanbanCard';
@@ -190,13 +190,14 @@ export function KanbanBoard({
     }
   }
 
-  function handleSaveCard(cardId: string, updates: { title?: string; pillValue?: string; notes?: string; storyPoints?: number | null }) {
+  function handleSaveCard(cardId: string, updates: { title?: string; pillValue?: string; notes?: string; storyPoints?: number | null; manualAnimation?: CardAnimation | null }) {
     const current = cards.find(c => c.id === cardId);
     onCardsChange(cards.map(c => {
       if (c.id !== cardId) return c;
-      const { storyPoints, ...rest } = updates;
+      const { storyPoints, manualAnimation, ...rest } = updates;
       const next: KanbanCard = { ...c, ...rest };
       if (storyPoints !== undefined) next.storyPoints = storyPoints === null ? undefined : storyPoints;
+      if (manualAnimation !== undefined) next.manualAnimation = manualAnimation === null ? undefined : manualAnimation;
       return next;
     }));
     if (current && user) {

@@ -45,6 +45,13 @@ export type CardAssignmentValue =
   | { kind: 'member'; uid: string }
   | { kind: 'freeText'; text: string };
 
+// The four visual effects a card can show as a small floating badge — smoke/
+// flame already existed tied only to the board's age-based staleness
+// setting; ice/sickly are new. `manualAnimation` lets a card owner force one
+// on (or force it off with 'none') regardless of card age — unset means
+// "use the automatic age-based smoke/flame behavior, same as before".
+export type CardAnimation = 'none' | 'smoke' | 'flame' | 'ice' | 'sickly';
+
 export interface KanbanCard {
   id: string;
   title: string;
@@ -58,6 +65,7 @@ export interface KanbanCard {
   attachments?: CardAttachment[];
   cardAssignments?: Record<string, CardAssignmentValue>;
   checklistInstanceRefs?: CardChecklistInstanceRef[];
+  manualAnimation?: CardAnimation;
 }
 
 // One instance created for this card against a specific linked Checklist

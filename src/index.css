@@ -54,3 +54,13 @@ html, body, #root {
   0%, 100% { transform: scale(1) rotate(-2deg); }
   50%      { transform: scale(1.15) rotate(2deg); }
 }
+
+@keyframes kc-ice {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.9; }
+  50%      { transform: scale(1.08) rotate(-4deg); opacity: 1; }
+}
+
+@keyframes kc-sickly {
+  0%, 100% { transform: rotate(-6deg) translateY(0); }
+  50%      { transform: rotate(6deg) translateY(2px); }
+}

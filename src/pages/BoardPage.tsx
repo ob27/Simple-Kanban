@@ -15,7 +15,7 @@ import { buildWildcardMatcher } from '../utils/wildcardSearch';
 import { useUserProfiles, resolveDisplay } from '../utils/userProfiles';
 import { getKanbanMembers } from '../utils/kanbanMembers';
 import { markCardInstancesOrphaned, createChecklistInstanceForCard } from '../utils/checklistIntegration';
-import { CardFilterModal, pillFilterKey, assignmentFilterKey } from '../components/CardFilterModal';
+import { CardFilterModal, pillFilterKey, assignmentFilterKey, UNALLOCATED_KEY } from '../components/CardFilterModal';
 import { useAuth } from '../AuthContext';
 import { ProgressBar } from '../components/ProgressBar';
 import { ProjectLifeline } from '../components/ProjectLifeline';
@@ -81,6 +81,9 @@ export function BoardPage() {
   // the whole selection, same as the pill-only filter always had.
   function cardMatchesFilter(card: KanbanCard): boolean {
     if (card.pillValue && cardFilter.has(pillFilterKey(card.pillValue))) return true;
+    for (const def of kanban?.assignmentDefinitions ?? []) {
+      if (!card.cardAssignments?.[def.id] && cardFilter.has(assignmentFilterKey(def.id, UNALLOCATED_KEY))) return true;
+    }
     if (card.cardAssignments) {
       for (const [defId, val] of Object.entries(card.cardAssignments)) {
         const valueKey = val.kind === 'member' ? val.uid : `text:${val.text}`;

@@ -5,7 +5,7 @@ import {
   SendOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, MoreOutlined,
   FileOutlined, PaperClipOutlined, SmileOutlined, PictureOutlined, UserOutlined,
 } from '@ant-design/icons';
-import type { KanbanCard, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue, CardTemplateChecklistLink } from '../types';
+import type { KanbanCard, CardComment, Kanban, CardAttachment, AssignmentDefinition, CardAssignmentValue, CardTemplateChecklistLink, CardAnimation } from '../types';
 import type { KanbanMember } from '../utils/kanbanMembers';
 import { UserAvatar } from './UserAvatar';
 import { EmojiPicker } from './EmojiPicker';
@@ -18,6 +18,7 @@ interface CardUpdates {
   pillValue?: string;
   notes?: string;
   storyPoints?: number | null;
+  manualAnimation?: CardAnimation | null;
 }
 
 interface Props {
@@ -216,6 +217,13 @@ export function CardNotesModal({
     }
   }
 
+  // 'auto' isn't a real stored value — it just means "no override," which
+  // KanbanCard.tsx reads as card.manualAnimation being unset and falls back
+  // to the board's own age-based smoke/flame behavior, unchanged from before.
+  function handleAnimationChange(value: string) {
+    onSaveCard(card.id, { manualAnimation: value === 'auto' ? null : (value as CardAnimation) });
+  }
+
   function openSplit() {
     setSplitTitles([card.title, '']);
     setSplitOpen(true);
@@ -364,6 +372,26 @@ export function CardNotesModal({
             />
           </div>
         )}
+        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: '#bbb', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+            Animation
+          </span>
+          <Select
+            size="small"
+            value={card.manualAnimation ?? 'auto'}
+            disabled={readOnly}
+            onChange={handleAnimationChange}
+            style={{ width: 150 }}
+            options={[
+              { value: 'auto', label: 'Auto (by card age)' },
+              { value: 'none', label: 'None' },
+              { value: 'smoke', label: '💨 Smoke' },
+              { value: 'flame', label: '🔥 Flame' },
+              { value: 'ice', label: '🧊 Ice' },
+              { value: 'sickly', label: '🤢 Sickly' },
+            ]}
+          />
+        </div>
       </div>
 
       <div style={{ padding: '0 24px 24px', maxHeight: isMobile ? 'calc(100dvh - 120px)' : 560, overflowY: 'auto' }}>
