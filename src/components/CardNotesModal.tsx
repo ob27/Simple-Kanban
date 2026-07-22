@@ -21,6 +21,15 @@ interface CardUpdates {
   manualAnimation?: CardAnimation | null;
 }
 
+const ANIMATION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'auto', label: 'Auto (by card age)' },
+  { value: 'none', label: 'None' },
+  { value: 'smoke', label: '💨 Smoke' },
+  { value: 'flame', label: '🔥 Flame' },
+  { value: 'ice', label: '🧊 Ice' },
+  { value: 'sickly', label: '🤢 Sickly' },
+];
+
 interface Props {
   card: KanbanCard;
   columnColor: string;
@@ -302,12 +311,23 @@ export function CardNotesModal({
     >
       {/* Header — editable title + pill */}
       <div style={{ borderLeft: `5px solid ${columnColor}`, padding: '18px 24px 16px', background: '#fff', position: 'relative' }}>
-        {((!readOnly && (onSplitCard || (otherKanbans && otherKanbans.length > 0))) || onViewHistory) && (
+        {(!readOnly || onViewHistory) && (
           <div style={{ position: 'absolute', top: 12, right: 44, zIndex: 2 }}>
             <Dropdown
               trigger={['click']}
               menu={{
                 items: [
+                  // Deliberately tucked into "more options" rather than a
+                  // primary header row — this is a rare, occasional
+                  // override, not something every card editor needs to see
+                  // at a glance every time.
+                  ...(!readOnly ? [{
+                    key: 'animation', label: 'Animation',
+                    children: ANIMATION_OPTIONS.map(opt => ({
+                      key: `animation:${opt.value}`, label: opt.label,
+                      icon: (card.manualAnimation ?? 'auto') === opt.value ? <CheckOutlined /> : undefined,
+                    })),
+                  }] : []),
                   ...(!readOnly && onSplitCard ? [{ key: 'split', label: 'Split card' }] : []),
                   ...(!readOnly && otherKanbans && otherKanbans.length > 0 ? [
                     { key: 'move', label: 'Move to kanban…' },
@@ -320,6 +340,7 @@ export function CardNotesModal({
                   if (key === 'move') { setMoveTargetId(null); setMoveMode('move'); }
                   if (key === 'copy') { setMoveTargetId(null); setMoveMode('copy'); }
                   if (key === 'history') onViewHistory?.();
+                  if (key.startsWith('animation:')) handleAnimationChange(key.slice('animation:'.length));
                 },
               }}
             >
@@ -372,26 +393,6 @@ export function CardNotesModal({
             />
           </div>
         )}
-        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: '#bbb', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
-            Animation
-          </span>
-          <Select
-            size="small"
-            value={card.manualAnimation ?? 'auto'}
-            disabled={readOnly}
-            onChange={handleAnimationChange}
-            style={{ width: 150 }}
-            options={[
-              { value: 'auto', label: 'Auto (by card age)' },
-              { value: 'none', label: 'None' },
-              { value: 'smoke', label: '💨 Smoke' },
-              { value: 'flame', label: '🔥 Flame' },
-              { value: 'ice', label: '🧊 Ice' },
-              { value: 'sickly', label: '🤢 Sickly' },
-            ]}
-          />
-        </div>
       </div>
 
       <div style={{ padding: '0 24px 24px', maxHeight: isMobile ? 'calc(100dvh - 120px)' : 560, overflowY: 'auto' }}>
