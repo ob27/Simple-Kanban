@@ -724,6 +724,7 @@ export function BoardPage() {
         showAssignmentsOnCard={kanban.showAssignmentsOnCard}
         members={boardMembers}
         onViewCardHistory={kanban.showHistory ? (cardId) => { setHistoryCardFilter(cardId); setHistoryOpen(true); } : undefined}
+        showCountdownTimers={kanban.showCountdownTimers}
       />
 
       {selectMode && selectedCardIds.size > 0 && (

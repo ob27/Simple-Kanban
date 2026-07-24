@@ -1,6 +1,21 @@
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, type UploadMetadata } from 'firebase/storage';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { storage, db } from '../firebase';
+
+// Every logo/icon upload writes to a fixed, overwrite-in-place path (so
+// deleteLogo/deleteKanbanLogo/deleteFolderLogo can find it again by guessing
+// the extension) — without this, the browser has no Cache-Control header to
+// go on and revalidates with the server on every load, which is what shows
+// up as the icon visibly "reloading" each time the page loads. A long,
+// immutable cache is safe here specifically because withCacheBust below
+// tacks a fresh version query param onto the stored URL on every upload —
+// that's what actually invalidates a previously-cached icon after a
+// legitimate re-upload, not the storage path (which stays the same).
+const LOGO_CACHE_METADATA: UploadMetadata = { cacheControl: 'public, max-age=31536000, immutable' };
+
+function withCacheBust(url: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
+}
 
 export interface WorkspaceSettings {
   navLogoUrl: string | null;
@@ -39,8 +54,8 @@ export async function uploadLogo(uid: string, slot: 'nav' | 'board', file: File)
   const ext = file.name.split('.').pop() ?? 'png';
   // Always overwrite the same path so old files don't accumulate
   const storageRef = ref(storage, `logos/${uid}/${slot}.${ext}`);
-  await uploadBytes(storageRef, file);
-  const url = await getDownloadURL(storageRef);
+  await uploadBytes(storageRef, file, LOGO_CACHE_METADATA);
+  const url = withCacheBust(await getDownloadURL(storageRef));
   await setDoc(doc(db, 'users', uid), { [`${slot}LogoUrl`]: url }, { merge: true });
   return url;
 }
@@ -59,8 +74,8 @@ export async function saveNavBgColor(uid: string, color: string): Promise<void> 
 export async function uploadKanbanLogo(kanbanId: string, file: File): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'png';
   const storageRef = ref(storage, `logos/kanbans/${kanbanId}/logo.${ext}`);
-  await uploadBytes(storageRef, file);
-  return getDownloadURL(storageRef);
+  await uploadBytes(storageRef, file, LOGO_CACHE_METADATA);
+  return withCacheBust(await getDownloadURL(storageRef));
 }
 
 export async function deleteKanbanLogo(kanbanId: string): Promise<void> {
@@ -72,8 +87,8 @@ export async function deleteKanbanLogo(kanbanId: string): Promise<void> {
 export async function uploadFolderLogo(folderId: string, file: File): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'png';
   const storageRef = ref(storage, `logos/folders/${folderId}/logo.${ext}`);
-  await uploadBytes(storageRef, file);
-  const url = await getDownloadURL(storageRef);
+  await uploadBytes(storageRef, file, LOGO_CACHE_METADATA);
+  const url = withCacheBust(await getDownloadURL(storageRef));
   await setDoc(doc(db, 'folders', folderId), { folderLogoUrl: url }, { merge: true });
   return url;
 }

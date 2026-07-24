@@ -66,6 +66,12 @@ export interface KanbanCard {
   cardAssignments?: Record<string, CardAssignmentValue>;
   checklistInstanceRefs?: CardChecklistInstanceRef[];
   manualAnimation?: CardAnimation;
+  // A deadline (epoch ms) shown on the card face as a "Nd left" countdown
+  // once the board's showCountdownTimers setting is on. Once it passes,
+  // the count keeps going negative ("3d overdue") rather than freezing on
+  // a static label — it only stops when this is cleared or the board
+  // setting is turned off. Unset means no countdown on this card.
+  countdownDate?: number;
 }
 
 // One instance created for this card against a specific linked Checklist
@@ -199,4 +205,8 @@ export interface Kanban {
   // gates whether the History view is CURRENTLY open (that's local,
   // non-persisted state in BoardPage.tsx). Defaults to false/hidden.
   showHistory?: boolean;
+  // Board-wide gate for rendering any card's countdownDate badge on its
+  // face — a card can have a countdownDate set while this is off, it just
+  // won't render anywhere until this is turned on. Defaults to false.
+  showCountdownTimers?: boolean;
 }

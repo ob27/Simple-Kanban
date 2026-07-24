@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { Modal, Input, Button, Popconfirm, Dropdown, InputNumber, Select, Segmented, message, Tooltip } from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
+import { Modal, Input, Button, Popconfirm, Dropdown, InputNumber, Select, Segmented, DatePicker, message, Tooltip } from 'antd';
 import {
   SendOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, MoreOutlined,
   FileOutlined, PaperClipOutlined, SmileOutlined, PictureOutlined, UserOutlined,
@@ -19,6 +20,7 @@ interface CardUpdates {
   notes?: string;
   storyPoints?: number | null;
   manualAnimation?: CardAnimation | null;
+  countdownDate?: number | null;
 }
 
 const ANIMATION_OPTIONS: { value: string; label: string }[] = [
@@ -193,6 +195,8 @@ export function CardNotesModal({
   const [splitTitles, setSplitTitles] = useState<string[]>(['', '']);
   const [moveMode, setMoveMode] = useState<'move' | 'copy' | null>(null);
   const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [countdownOpen, setCountdownOpen] = useState(false);
+  const [countdownValue, setCountdownValue] = useState<Dayjs | null>(null);
   // Stored append-order (oldest first) regardless of setting — sort here,
   // at render time, rather than reordering the underlying array, so
   // switching the setting later doesn't need a data migration.
@@ -231,6 +235,16 @@ export function CardNotesModal({
   // to the board's own age-based smoke/flame behavior, unchanged from before.
   function handleAnimationChange(value: string) {
     onSaveCard(card.id, { manualAnimation: value === 'auto' ? null : (value as CardAnimation) });
+  }
+
+  function openCountdown() {
+    setCountdownValue(card.countdownDate ? dayjs(card.countdownDate) : null);
+    setCountdownOpen(true);
+  }
+
+  function confirmCountdown() {
+    onSaveCard(card.id, { countdownDate: countdownValue ? countdownValue.valueOf() : null });
+    setCountdownOpen(false);
   }
 
   function openSplit() {
@@ -328,6 +342,7 @@ export function CardNotesModal({
                       icon: (card.manualAnimation ?? 'auto') === opt.value ? <CheckOutlined /> : undefined,
                     })),
                   }] : []),
+                  ...(!readOnly ? [{ key: 'countdown', label: card.countdownDate ? 'Edit countdown…' : 'Set countdown…' }] : []),
                   ...(!readOnly && onSplitCard ? [{ key: 'split', label: 'Split card' }] : []),
                   ...(!readOnly && otherKanbans && otherKanbans.length > 0 ? [
                     { key: 'move', label: 'Move to kanban…' },
@@ -340,6 +355,7 @@ export function CardNotesModal({
                   if (key === 'move') { setMoveTargetId(null); setMoveMode('move'); }
                   if (key === 'copy') { setMoveTargetId(null); setMoveMode('copy'); }
                   if (key === 'history') onViewHistory?.();
+                  if (key === 'countdown') openCountdown();
                   if (key.startsWith('animation:')) handleAnimationChange(key.slice('animation:'.length));
                 },
               }}
@@ -766,6 +782,26 @@ export function CardNotesModal({
           onChange={setMoveTargetId}
           options={(otherKanbans ?? []).map(k => ({ value: k.id, label: k.name }))}
         />
+      </Modal>
+
+      <Modal
+        title="Countdown"
+        open={countdownOpen}
+        onCancel={() => setCountdownOpen(false)}
+        onOk={confirmCountdown}
+        okText="Save"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12, color: '#888' }}>
+            Shows a "days left" badge on the card face once due, keeps counting into "days overdue" until cleared here or turned off in board settings.
+          </div>
+          <DatePicker style={{ width: '100%' }} value={countdownValue} onChange={setCountdownValue} />
+          {countdownValue && (
+            <Button size="small" onClick={() => setCountdownValue(null)} style={{ alignSelf: 'flex-start' }}>
+              Clear
+            </Button>
+          )}
+        </div>
       </Modal>
     </Modal>
   );

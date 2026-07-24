@@ -93,7 +93,7 @@ export async function createKanban(uid: string, name: string, email?: string): P
     inviteToken,
     columns: cols,
     totalEstimated: DEFAULT_TOTAL_ESTIMATED,
-    totalFromBacklog: false,
+    totalFromBacklog: true,
     backlogColumnId: cols[0].id,
     groomedColumnId: cols[1].id,
     doneColumnId: cols[5].id,

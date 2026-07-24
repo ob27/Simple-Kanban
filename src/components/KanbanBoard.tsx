@@ -46,6 +46,7 @@ interface Props {
   showAssignmentsOnCard?: boolean;
   members?: KanbanMember[];
   onViewCardHistory?: (cardId: string) => void;
+  showCountdownTimers?: boolean;
 }
 
 function burstConfetti(colors: string[]) {
@@ -71,6 +72,7 @@ export function KanbanBoard({
   showStoryPoints, staleAfterDays, accoladesEnabled = true, selectMode, selectedCardIds, onToggleSelect,
   onSplitCard, otherKanbans, onMoveOrCopyCard, onUploadAttachment, onDeleteAttachment, onUploadCommentImage,
   assignmentDefinitions, showAssignmentsOnCard, members, onViewCardHistory,
+  showCountdownTimers,
 }: Props) {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const [notesCardId, setNotesCardId] = useState<string | null>(null);
@@ -373,6 +375,7 @@ export function KanbanBoard({
               showAssignmentsOnCard={showAssignmentsOnCard}
               memberEmailByUid={memberEmailByUid}
               memberDisplayNameByUid={memberDisplayNameByUid}
+              showCountdownTimers={showCountdownTimers}
             />
           ))}
         </div>

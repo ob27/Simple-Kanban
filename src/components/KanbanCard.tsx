@@ -26,6 +26,16 @@ interface Props {
   showAssignmentsOnCard?: boolean;
   memberEmailByUid?: Record<string, string>;
   memberDisplayNameByUid?: Record<string, string>;
+  showCountdownTimers?: boolean;
+}
+
+// Whole days until countdownDate — negative once it's passed, and
+// deliberately never clamped/frozen there: it keeps counting down into
+// "N days overdue" territory for as long as the card carries a
+// countdownDate, per the feature's own point (only turning it off, board-
+// wide or per-card, stops it).
+function countdownDaysRemaining(countdownDate: number): number {
+  return Math.ceil((countdownDate - Date.now()) / 86_400_000);
 }
 
 const LONG_PRESS_DELAY = 380;
@@ -35,6 +45,7 @@ export function KanbanCard({
   card, columnColor, onDelete, onOpenNotes, cardFontSize, wrapCardText = false, isOverlay = false, isViewer = false,
   showStoryPoints = false, staleAfterDays, selectMode = false, selected = false, onToggleSelect,
   assignmentDefinitions, showAssignmentsOnCard = false, memberEmailByUid, memberDisplayNameByUid,
+  showCountdownTimers = false,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id, disabled: selectMode });
 
@@ -211,6 +222,24 @@ export function KanbanCard({
             )}
           </div>
         )}
+
+        {!isOverlay && showCountdownTimers && card.countdownDate != null && (() => {
+          const days = countdownDaysRemaining(card.countdownDate);
+          const overdue = days < 0;
+          const label = days > 0 ? `${days}d left` : days === 0 ? 'Due today' : `${-days}d overdue`;
+          return (
+            <div
+              style={{
+                position: 'absolute', top: -6, left: 8, pointerEvents: 'none', zIndex: 1,
+                fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 5,
+                color: '#fff', background: overdue ? '#e53e3e' : 'rgba(0,0,0,0.55)',
+                boxShadow: overdue ? '0 0 4px rgba(229,62,62,0.7)' : undefined,
+              }}
+            >
+              {label}
+            </div>
+          );
+        })()}
 
         {!isOverlay && !isViewer && !selectMode && (
           <div

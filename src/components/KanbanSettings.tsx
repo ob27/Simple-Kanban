@@ -112,6 +112,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
         accoladesEnabled: kanban.accoladesEnabled ?? true,
         commentSortOrder: kanban.commentSortOrder ?? 'oldest',
         showHistory: kanban.showHistory ?? false,
+        showCountdownTimers: kanban.showCountdownTimers ?? false,
         ...Object.fromEntries(kanban.columns.map((c, i) => [`col_${i}`, c.label])),
       });
     }
@@ -161,6 +162,7 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
       accoladesEnabled: vals.accoladesEnabled as boolean,
       commentSortOrder: vals.commentSortOrder as 'newest' | 'oldest',
       showHistory: vals.showHistory as boolean,
+      showCountdownTimers: vals.showCountdownTimers as boolean,
       staleAfterDays: staleAfterDaysValue,
       columns: updatedColumns,
       assignmentDefinitions: cleanedAssignmentDefs.length ? cleanedAssignmentDefs : undefined,
@@ -393,6 +395,12 @@ export function KanbanSettings({ open, kanban, onClose, onChange, onDelete, onEx
               <Switch size="small" />
             </Form.Item>
             <span style={{ fontSize: 13, color: '#555' }}>Show assignments on card face</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Form.Item name="showCountdownTimers" valuePropName="checked" noStyle>
+              <Switch size="small" />
+            </Form.Item>
+            <span style={{ fontSize: 13, color: '#555' }}>Show countdown timers on card face</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Form.Item name="accoladesEnabled" valuePropName="checked" noStyle>
